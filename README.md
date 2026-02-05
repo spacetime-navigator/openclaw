@@ -54,6 +54,18 @@ openclaw onboard --install-daemon
 
 The wizard installs the Gateway daemon (launchd/systemd user service) so it stays running.
 
+### Aesop Docker Setup (this repo)
+
+For the hardened Docker + Postgres/pgvector setup used by Aesop, see: [`README.md`](../README.md)
+
+#### Aesop Memory Workflow (custom)
+
+- Immutable context files on host: `SOUL.md`, `IDENTITY.md`, `USER.md`
+- Mutable extensions: `*_PLUS.md` (AI-managed)
+- Postgres memory store for all prompts/thinking/responses with hybrid search tools:
+  - `memory_search` (vector/keyword/hybrid)
+  - `memory_recall` (time window + actor filters)
+
 ## Quick start (TL;DR)
 
 Runtime: **Node ≥22**.

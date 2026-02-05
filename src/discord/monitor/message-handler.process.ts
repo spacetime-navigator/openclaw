@@ -25,7 +25,7 @@ import { recordInboundSession } from "../../channels/session.js";
 import { createTypingCallbacks } from "../../channels/typing.js";
 import { resolveMarkdownTableMode } from "../../config/markdown-tables.js";
 import { readSessionUpdatedAt, resolveStorePath } from "../../config/sessions.js";
-import { danger, logVerbose, shouldLogVerbose } from "../../globals.js";
+import { danger, info, logVerbose, shouldLogVerbose, warn } from "../../globals.js";
 import { buildAgentSessionKey } from "../../routing/resolve-route.js";
 import { resolveThreadSessionKeys } from "../../routing/session-key.js";
 import { buildUntrustedChannelMetadata } from "../../security/channel-metadata.js";
@@ -375,6 +375,13 @@ export async function processDiscordMessage(ctx: DiscordMessagePreflightContext)
       });
       replyReference.markSent();
     },
+    onSkip: (payload, info) => {
+      // Log when replies are skipped (empty/silent/filtered) - always log as warning
+      const skipMessage = `discord: skipped ${info.kind} reply (reason: ${info.reason}) ` +
+        `for ${replyTarget} text="${(payload.text ?? "").substring(0, 100)}${(payload.text ?? "").length > 100 ? "..." : ""}"`;
+      logVerbose(skipMessage);
+      runtime.log(warn(skipMessage)); // Always log as warning for visibility
+    },
     onError: (err, info) => {
       runtime.error?.(danger(`discord ${info.kind} reply failed: ${String(err)}`));
     },
@@ -407,6 +414,11 @@ export async function processDiscordMessage(ctx: DiscordMessagePreflightContext)
   });
   markDispatchIdle();
   if (!queuedFinal) {
+    // Log when no final reply was queued (empty/silent/filtered) - always log as warning
+    const skipMessage = `discord: no final reply queued for ${replyTarget} ` +
+      `(counts: final=${counts.final} tool=${counts.tool} block=${counts.block})`;
+    logVerbose(skipMessage);
+    runtime.log(warn(skipMessage)); // Always log as warning for visibility
     if (isGuildMessage) {
       clearHistoryEntriesIfEnabled({
         historyMap: guildHistories,
@@ -416,12 +428,10 @@ export async function processDiscordMessage(ctx: DiscordMessagePreflightContext)
     }
     return;
   }
-  if (shouldLogVerbose()) {
-    const finalCount = counts.final;
-    logVerbose(
-      `discord: delivered ${finalCount} reply${finalCount === 1 ? "" : "ies"} to ${replyTarget}`,
-    );
-  }
+  const finalCount = counts.final;
+  const deliveredMessage = `discord: delivered ${finalCount} reply${finalCount === 1 ? "" : "ies"} to ${replyTarget}`;
+  logVerbose(deliveredMessage);
+  runtime.log(info(deliveredMessage)); // Always log delivery as info
   removeAckReactionAfterReply({
     removeAfterReply: removeAckAfterReply,
     ackReactionPromise,

@@ -4,7 +4,10 @@ import path from "node:path";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { resolveUserPath } from "../utils.js";
-import { resolveWorkspaceTemplateDir } from "./workspace-templates.js";
+import {
+  resolveImmutableBootstrapPath,
+  resolveWorkspaceTemplateDir,
+} from "./workspace-templates.js";
 
 export function resolveDefaultAgentWorkspaceDir(
   env: NodeJS.ProcessEnv = process.env,
@@ -20,13 +23,45 @@ export function resolveDefaultAgentWorkspaceDir(
 export const DEFAULT_AGENT_WORKSPACE_DIR = resolveDefaultAgentWorkspaceDir();
 export const DEFAULT_AGENTS_FILENAME = "AGENTS.md";
 export const DEFAULT_SOUL_FILENAME = "SOUL.md";
+export const DEFAULT_SOUL_PLUS_FILENAME = "SOUL_PLUS.md";
 export const DEFAULT_TOOLS_FILENAME = "TOOLS.md";
 export const DEFAULT_IDENTITY_FILENAME = "IDENTITY.md";
+export const DEFAULT_IDENTITY_PLUS_FILENAME = "IDENTITY_PLUS.md";
 export const DEFAULT_USER_FILENAME = "USER.md";
+export const DEFAULT_USER_PLUS_FILENAME = "USER_PLUS.md";
 export const DEFAULT_HEARTBEAT_FILENAME = "HEARTBEAT.md";
 export const DEFAULT_BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
+export const DEFAULT_WORKSPACE_RULES_FILENAME = "WORKSPACE_RULES.md";
 export const DEFAULT_MEMORY_FILENAME = "MEMORY.md";
 export const DEFAULT_MEMORY_ALT_FILENAME = "memory.md";
+
+/**
+ * Relative paths the agent may write/edit. SOUL.md, IDENTITY.md, USER.md, TOOLS.md are
+ * immutable (read-only in workspace; TOOLS and code changes via PR only). This list cannot
+ * be changed by the agent (it lives in OpenClaw source outside the workspace).
+ */
+export const ALLOWED_WRITABLE_WORKSPACE_FILES: readonly string[] = [
+  "AGENTS.md",
+  "BOOT.md",
+  "BOOTSTRAP.md",
+  "HEARTBEAT.md",
+  "SOUL_PLUS.md",
+  "IDENTITY_PLUS.md",
+  "USER_PLUS.md",
+  "MEMORY.md",
+  "memory.md",
+];
+
+export function isAllowedWritablePath(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, "/").trim();
+  if (ALLOWED_WRITABLE_WORKSPACE_FILES.includes(normalized)) {
+    return true;
+  }
+  if (normalized.startsWith("memory/")) {
+    return true;
+  }
+  return false;
+}
 
 function stripFrontMatter(content: string): string {
   if (!content.startsWith("---")) {
@@ -58,11 +93,15 @@ async function loadTemplate(name: string): Promise<string> {
 export type WorkspaceBootstrapFileName =
   | typeof DEFAULT_AGENTS_FILENAME
   | typeof DEFAULT_SOUL_FILENAME
+  | typeof DEFAULT_SOUL_PLUS_FILENAME
   | typeof DEFAULT_TOOLS_FILENAME
   | typeof DEFAULT_IDENTITY_FILENAME
+  | typeof DEFAULT_IDENTITY_PLUS_FILENAME
   | typeof DEFAULT_USER_FILENAME
+  | typeof DEFAULT_USER_PLUS_FILENAME
   | typeof DEFAULT_HEARTBEAT_FILENAME
   | typeof DEFAULT_BOOTSTRAP_FILENAME
+  | typeof DEFAULT_WORKSPACE_RULES_FILENAME
   | typeof DEFAULT_MEMORY_FILENAME
   | typeof DEFAULT_MEMORY_ALT_FILENAME;
 
@@ -84,6 +123,19 @@ async function writeFileIfMissing(filePath: string, content: string) {
     if (anyErr.code !== "EEXIST") {
       throw err;
     }
+  }
+}
+
+/** Set file to read-only (0o444) so it cannot be overwritten by the agent. No-op on unsupported FS. */
+async function makeReadOnlyIfExists(filePath: string): Promise<void> {
+  try {
+    await fs.chmod(filePath, 0o444);
+  } catch (err) {
+    const anyErr = err as { code?: string };
+    if (anyErr.code === "ENOENT") {
+      return;
+    }
+    // EINVAL or other on some FS (e.g. Windows); don't fail workspace creation
   }
 }
 
@@ -150,9 +202,20 @@ export async function ensureAgentWorkspace(params?: {
   const userPath = path.join(dir, DEFAULT_USER_FILENAME);
   const heartbeatPath = path.join(dir, DEFAULT_HEARTBEAT_FILENAME);
   const bootstrapPath = path.join(dir, DEFAULT_BOOTSTRAP_FILENAME);
+  const workspaceRulesPath = path.join(dir, DEFAULT_WORKSPACE_RULES_FILENAME);
 
   const isBrandNewWorkspace = await (async () => {
-    const paths = [agentsPath, soulPath, toolsPath, identityPath, userPath, heartbeatPath];
+    const paths = [
+      agentsPath,
+      soulPath,
+      toolsPath,
+      identityPath,
+      userPath,
+      heartbeatPath,
+      path.join(dir, DEFAULT_SOUL_PLUS_FILENAME),
+      path.join(dir, DEFAULT_IDENTITY_PLUS_FILENAME),
+      path.join(dir, DEFAULT_USER_PLUS_FILENAME),
+    ];
     const existing = await Promise.all(
       paths.map(async (p) => {
         try {
@@ -171,17 +234,37 @@ export async function ensureAgentWorkspace(params?: {
   const toolsTemplate = await loadTemplate(DEFAULT_TOOLS_FILENAME);
   const identityTemplate = await loadTemplate(DEFAULT_IDENTITY_FILENAME);
   const userTemplate = await loadTemplate(DEFAULT_USER_FILENAME);
+  const soulPlusTemplate = await loadTemplate(DEFAULT_SOUL_PLUS_FILENAME);
+  const identityPlusTemplate = await loadTemplate(DEFAULT_IDENTITY_PLUS_FILENAME);
+  const userPlusTemplate = await loadTemplate(DEFAULT_USER_PLUS_FILENAME);
   const heartbeatTemplate = await loadTemplate(DEFAULT_HEARTBEAT_FILENAME);
   const bootstrapTemplate = await loadTemplate(DEFAULT_BOOTSTRAP_FILENAME);
+  const workspaceRulesTemplate = await loadTemplate(DEFAULT_WORKSPACE_RULES_FILENAME);
 
   await writeFileIfMissing(agentsPath, agentsTemplate);
-  await writeFileIfMissing(soulPath, soulTemplate);
-  await writeFileIfMissing(toolsPath, toolsTemplate);
-  await writeFileIfMissing(identityPath, identityTemplate);
-  await writeFileIfMissing(userPath, userTemplate);
+  // When OPENCLAW_IMMUTABLE_DIR is set (Docker), SOUL/IDENTITY/USER/TOOLS/WORKSPACE_RULES live in the image read-only; do not write them to workspace.
+  const useImmutableDir = Boolean(process.env.OPENCLAW_IMMUTABLE_DIR?.trim());
+  if (!useImmutableDir) {
+    await writeFileIfMissing(soulPath, soulTemplate);
+    await writeFileIfMissing(toolsPath, toolsTemplate);
+    await writeFileIfMissing(identityPath, identityTemplate);
+    await writeFileIfMissing(userPath, userTemplate);
+    await writeFileIfMissing(workspaceRulesPath, workspaceRulesTemplate);
+  }
+  await writeFileIfMissing(path.join(dir, DEFAULT_SOUL_PLUS_FILENAME), soulPlusTemplate);
+  await writeFileIfMissing(path.join(dir, DEFAULT_IDENTITY_PLUS_FILENAME), identityPlusTemplate);
+  await writeFileIfMissing(path.join(dir, DEFAULT_USER_PLUS_FILENAME), userPlusTemplate);
   await writeFileIfMissing(heartbeatPath, heartbeatTemplate);
   if (isBrandNewWorkspace) {
     await writeFileIfMissing(bootstrapPath, bootstrapTemplate);
+  }
+  // When not using immutable dir, make SOUL/IDENTITY/USER/TOOLS/WORKSPACE_RULES read-only in workspace so the agent cannot overwrite.
+  if (!useImmutableDir) {
+    await makeReadOnlyIfExists(soulPath);
+    await makeReadOnlyIfExists(identityPath);
+    await makeReadOnlyIfExists(userPath);
+    await makeReadOnlyIfExists(toolsPath);
+    await makeReadOnlyIfExists(workspaceRulesPath);
   }
   await ensureGitRepo(dir, isBrandNewWorkspace);
 
@@ -241,45 +324,30 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
     name: WorkspaceBootstrapFileName;
     filePath: string;
   }> = [
-    {
-      name: DEFAULT_AGENTS_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_AGENTS_FILENAME),
-    },
-    {
-      name: DEFAULT_SOUL_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_SOUL_FILENAME),
-    },
-    {
-      name: DEFAULT_TOOLS_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_TOOLS_FILENAME),
-    },
-    {
-      name: DEFAULT_IDENTITY_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_IDENTITY_FILENAME),
-    },
-    {
-      name: DEFAULT_USER_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_USER_FILENAME),
-    },
-    {
-      name: DEFAULT_HEARTBEAT_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_HEARTBEAT_FILENAME),
-    },
-    {
-      name: DEFAULT_BOOTSTRAP_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_BOOTSTRAP_FILENAME),
-    },
+    { name: DEFAULT_AGENTS_FILENAME, filePath: path.join(resolvedDir, DEFAULT_AGENTS_FILENAME) },
+    { name: DEFAULT_SOUL_FILENAME, filePath: path.join(resolvedDir, DEFAULT_SOUL_FILENAME) },
+    { name: DEFAULT_SOUL_PLUS_FILENAME, filePath: path.join(resolvedDir, DEFAULT_SOUL_PLUS_FILENAME) },
+    { name: DEFAULT_TOOLS_FILENAME, filePath: path.join(resolvedDir, DEFAULT_TOOLS_FILENAME) },
+    { name: DEFAULT_IDENTITY_FILENAME, filePath: path.join(resolvedDir, DEFAULT_IDENTITY_FILENAME) },
+    { name: DEFAULT_IDENTITY_PLUS_FILENAME, filePath: path.join(resolvedDir, DEFAULT_IDENTITY_PLUS_FILENAME) },
+    { name: DEFAULT_USER_FILENAME, filePath: path.join(resolvedDir, DEFAULT_USER_FILENAME) },
+    { name: DEFAULT_USER_PLUS_FILENAME, filePath: path.join(resolvedDir, DEFAULT_USER_PLUS_FILENAME) },
+    { name: DEFAULT_HEARTBEAT_FILENAME, filePath: path.join(resolvedDir, DEFAULT_HEARTBEAT_FILENAME) },
+    { name: DEFAULT_BOOTSTRAP_FILENAME, filePath: path.join(resolvedDir, DEFAULT_BOOTSTRAP_FILENAME) },
+    { name: DEFAULT_WORKSPACE_RULES_FILENAME, filePath: path.join(resolvedDir, DEFAULT_WORKSPACE_RULES_FILENAME) },
   ];
 
   entries.push(...(await resolveMemoryBootstrapEntries(resolvedDir)));
 
   const result: WorkspaceBootstrapFile[] = [];
   for (const entry of entries) {
+    const readPath =
+      (await resolveImmutableBootstrapPath(entry.name)) ?? entry.filePath;
     try {
-      const content = await fs.readFile(entry.filePath, "utf-8");
+      const content = await fs.readFile(readPath, "utf-8");
       result.push({
         name: entry.name,
-        path: entry.filePath,
+        path: readPath,
         content,
         missing: false,
       });

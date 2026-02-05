@@ -355,7 +355,7 @@ function buildMessageToolDescription(options?: {
 }): string {
   const baseDescription = "Send, delete, and manage messages via channel plugins.";
 
-  // If we have a current channel, show only its supported actions
+  // If we have a current channel, show only its supported actions and the channel id for sends
   if (options?.currentChannel) {
     const channelActions = filterActionsForContext({
       actions: listChannelSupportedActions({
@@ -366,10 +366,14 @@ function buildMessageToolDescription(options?: {
       currentChannelId: options.currentChannelId,
     });
     if (channelActions.length > 0) {
-      // Always include "send" as a base action
       const allActions = new Set(["send", ...channelActions]);
       const actionList = Array.from(allActions).toSorted().join(", ");
-      return `${baseDescription} Current channel (${options.currentChannel}) supports: ${actionList}.`;
+      const channelIdHint =
+        options.currentChannelId?.trim() &&
+        /^\d+$/.test(options.currentChannelId.replace(/^channel:/i, "").trim())
+          ? ` Use channel ${options.currentChannelId.replace(/^channel:/i, "").trim()} for sends to this channel.`
+          : "";
+      return `${baseDescription} Current channel (${options.currentChannel}) supports: ${actionList}.${channelIdHint}`;
     }
   }
 

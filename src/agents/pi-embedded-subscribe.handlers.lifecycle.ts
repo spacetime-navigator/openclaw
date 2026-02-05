@@ -43,7 +43,9 @@ export function handleAutoCompactionEnd(
   if (willRetry) {
     ctx.noteCompactionRetry();
     ctx.resetForCompactionRetry();
-    ctx.log.debug(`embedded run compaction retry: runId=${ctx.params.runId}`);
+    ctx.log.warn(
+      `embedded run compaction retry: runId=${ctx.params.runId} (second LLM turn; run timeout applies to entire run)`,
+    );
   } else {
     ctx.maybeResolveCompactionWait();
   }

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { applyUpdateHunk } from "./apply-patch-update.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
+import { isAllowedWritablePath } from "./workspace.js";
 
 const BEGIN_PATCH_MARKER = "*** Begin Patch";
 const END_PATCH_MARKER = "*** End Patch";
@@ -117,6 +118,32 @@ export async function applyPatch(
   const parsed = parsePatchText(input);
   if (parsed.hunks.length === 0) {
     throw new Error("No files were modified.");
+  }
+
+  const root = options.sandboxRoot ?? options.cwd;
+  for (const hunk of parsed.hunks) {
+    const pathsToCheck = [hunk.path];
+    if (hunk.kind === "update" && hunk.movePath) {
+      pathsToCheck.push(hunk.movePath);
+    }
+    for (const p of pathsToCheck) {
+      const expanded =
+        p === "~" ? os.homedir() : p.startsWith("~/") ? os.homedir() + p.slice(1) : p;
+      const resolved = path.isAbsolute(expanded)
+        ? path.normalize(expanded)
+        : path.resolve(root, expanded);
+      const relative = path.relative(root, resolved);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) {
+        throw new Error(
+          `apply_patch: path escapes workspace: ${p}. Edits only allowed to memory, BOOTSTRAP.md, HEARTBEAT.md, *_PLUS.md, AGENTS.md.`,
+        );
+      }
+      if (!isAllowedWritablePath(relative)) {
+        throw new Error(
+          `apply_patch: path not allowed: ${relative}. Edits only allowed to memory files, BOOTSTRAP.md, HEARTBEAT.md, *_PLUS.md, AGENTS.md. SOUL/IDENTITY/USER/TOOLS are immutable (PR-only for TOOLS).`,
+        );
+      }
+    }
   }
 
   const summary: ApplyPatchSummary = {

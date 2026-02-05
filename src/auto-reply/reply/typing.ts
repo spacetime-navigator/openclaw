@@ -21,7 +21,7 @@ export function createTypingController(params: {
   const {
     onReplyStart,
     typingIntervalSeconds = 6,
-    typingTtlMs = 2 * 60_000,
+    typingTtlMs = 3 * 60_000,
     silentToken = SILENT_REPLY_TOKEN,
     log,
   } = params;

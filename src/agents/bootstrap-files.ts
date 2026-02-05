@@ -7,6 +7,12 @@ import {
   loadWorkspaceBootstrapFiles,
   type WorkspaceBootstrapFile,
 } from "./workspace.js";
+import {
+  DEFAULT_BOOTSTRAP_FILENAME,
+  DEFAULT_IDENTITY_PLUS_FILENAME,
+  DEFAULT_SOUL_PLUS_FILENAME,
+  DEFAULT_USER_PLUS_FILENAME,
+} from "./workspace.js";
 
 export function makeBootstrapWarn(params: {
   sessionLabel: string;
@@ -26,10 +32,21 @@ export async function resolveBootstrapFilesForRun(params: {
   agentId?: string;
 }): Promise<WorkspaceBootstrapFile[]> {
   const sessionKey = params.sessionKey ?? params.sessionId;
-  const bootstrapFiles = filterBootstrapFilesForSession(
+  let bootstrapFiles = filterBootstrapFilesForSession(
     await loadWorkspaceBootstrapFiles(params.workspaceDir),
     sessionKey,
   );
+  const hasBootstrap = bootstrapFiles.some(
+    (file) => file.name === DEFAULT_BOOTSTRAP_FILENAME && !file.missing,
+  );
+  if (hasBootstrap) {
+    const plusFiles = new Set([
+      DEFAULT_SOUL_PLUS_FILENAME,
+      DEFAULT_IDENTITY_PLUS_FILENAME,
+      DEFAULT_USER_PLUS_FILENAME,
+    ]);
+    bootstrapFiles = bootstrapFiles.filter((file) => !plusFiles.has(file.name));
+  }
   return applyBootstrapHookOverrides({
     files: bootstrapFiles,
     workspaceDir: params.workspaceDir,

@@ -35,7 +35,7 @@ vi.mock("@mariozechner/pi-ai", async () => {
 
   const buildAssistantErrorMessage = (model: { api: string; provider: string; id: string }) => ({
     role: "assistant" as const,
-    content: [] as const,
+    content: [],
     stopReason: "error" as const,
     errorMessage: "boom",
     api: model.api,
@@ -73,7 +73,7 @@ vi.mock("@mariozechner/pi-ai", async () => {
       return buildAssistantMessage(model);
     },
     streamSimple: (model: { api: string; provider: string; id: string }) => {
-      const stream = new actual.AssistantMessageEventStream();
+      const stream = actual.createAssistantMessageEventStream();
       queueMicrotask(() => {
         stream.push({
           type: "done",
@@ -202,6 +202,7 @@ describe("runEmbeddedPiAgent", () => {
 
     await expect(
       runEmbeddedPiAgent({
+        runId: "run-test",
         sessionId: "session:test",
         sessionKey: testSessionKey,
         sessionFile,
@@ -228,6 +229,7 @@ describe("runEmbeddedPiAgent", () => {
       await ensureModels(cfg);
 
       await runEmbeddedPiAgent({
+        runId: "run-test",
         sessionId: "session:test",
         sessionKey: testSessionKey,
         sessionFile,
@@ -259,6 +261,7 @@ describe("runEmbeddedPiAgent", () => {
     await ensureModels(cfg);
 
     const result = await runEmbeddedPiAgent({
+      runId: "run-test",
       sessionId: "session:test",
       sessionKey: testSessionKey,
       sessionFile,
@@ -271,7 +274,7 @@ describe("runEmbeddedPiAgent", () => {
       agentDir,
       enqueue: immediateEnqueue,
     });
-    expect(result.payloads[0]?.isError).toBe(true);
+    expect(result.payloads?.[0]?.isError).toBe(true);
 
     const messages = await readSessionMessages(sessionFile);
     const userIndex = messages.findIndex(
@@ -291,6 +294,7 @@ describe("runEmbeddedPiAgent", () => {
       sessionManager.appendMessage({
         role: "user",
         content: [{ type: "text", text: "seed user" }],
+        timestamp: Date.now(),
       });
       sessionManager.appendMessage({
         role: "assistant",
@@ -320,6 +324,7 @@ describe("runEmbeddedPiAgent", () => {
       await ensureModels(cfg);
 
       await runEmbeddedPiAgent({
+        runId: "run-test",
         sessionId: "session:test",
         sessionKey: testSessionKey,
         sessionFile,
@@ -360,6 +365,7 @@ describe("runEmbeddedPiAgent", () => {
     await ensureModels(cfg);
 
     await runEmbeddedPiAgent({
+      runId: "run-test",
       sessionId: "session:test",
       sessionKey: testSessionKey,
       sessionFile,
@@ -374,6 +380,7 @@ describe("runEmbeddedPiAgent", () => {
     });
 
     await runEmbeddedPiAgent({
+      runId: "run-test",
       sessionId: "session:test",
       sessionKey: testSessionKey,
       sessionFile,
@@ -418,12 +425,14 @@ describe("runEmbeddedPiAgent", () => {
     sessionManager.appendMessage({
       role: "user",
       content: [{ type: "text", text: "orphaned user" }],
+      timestamp: Date.now(),
     });
 
     const cfg = makeOpenAiConfig(["mock-1"]);
     await ensureModels(cfg);
 
     const result = await runEmbeddedPiAgent({
+      runId: "run-test",
       sessionId: "session:test",
       sessionKey: testSessionKey,
       sessionFile,
@@ -449,12 +458,14 @@ describe("runEmbeddedPiAgent", () => {
     sessionManager.appendMessage({
       role: "user",
       content: [{ type: "text", text: "solo user" }],
+      timestamp: Date.now(),
     });
 
     const cfg = makeOpenAiConfig(["mock-1"]);
     await ensureModels(cfg);
 
     const result = await runEmbeddedPiAgent({
+      runId: "run-test",
       sessionId: "session:test",
       sessionKey: testSessionKey,
       sessionFile,

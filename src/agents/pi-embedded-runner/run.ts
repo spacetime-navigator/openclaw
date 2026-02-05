@@ -1,5 +1,9 @@
 import fs from "node:fs/promises";
-import type { ThinkLevel } from "../../auto-reply/thinking.js";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { SessionManager } from "@mariozechner/pi-coding-agent";
+import type { ReasoningLevel, ThinkLevel } from "../../auto-reply/thinking.js";
+import type { ExecElevatedDefaults } from "../bash-tools.js";
+import type { OpenClawConfig } from "../../config/config.js";
 import type { RunEmbeddedPiAgentParams } from "./run/params.js";
 import type { EmbeddedPiAgentMeta, EmbeddedPiRunResult } from "./types.js";
 import { enqueueCommandInLane } from "../../process/command-queue.js";
@@ -46,12 +50,15 @@ import {
   type FailoverReason,
 } from "../pi-embedded-helpers.js";
 import { normalizeUsage, type UsageLike } from "../usage.js";
+import { estimateMessagesTokens } from "../compaction.js";
+import { createOpenClawCodingTools } from "../pi-tools.js";
 import { compactEmbeddedPiSessionDirect } from "./compact.js";
 import { resolveGlobalLane, resolveSessionLane } from "./lanes.js";
 import { log } from "./logger.js";
 import { resolveModel } from "./model.js";
 import { runEmbeddedAttempt } from "./run/attempt.js";
 import { buildEmbeddedRunPayloads } from "./run/payloads.js";
+import { buildEmbeddedSystemPrompt } from "./system-prompt.js";
 import { describeUnknownError } from "./utils.js";
 
 type ApiKeyInfo = ResolvedProviderAuth;
@@ -59,6 +66,7 @@ type ApiKeyInfo = ResolvedProviderAuth;
 // Avoid Anthropic's refusal test token poisoning session transcripts.
 const ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL = "ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL";
 const ANTHROPIC_MAGIC_STRING_REPLACEMENT = "ANTHROPIC MAGIC STRING TRIGGER REFUSAL (redacted)";
+const DEFAULT_COMPACTION_HISTORY_LIMIT = 0.7;
 
 function scrubAnthropicRefusalMagic(prompt: string): string {
   if (!prompt.includes(ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL)) {
@@ -68,6 +76,271 @@ function scrubAnthropicRefusalMagic(prompt: string): string {
     ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL,
     ANTHROPIC_MAGIC_STRING_REPLACEMENT,
   );
+}
+
+function resolveCompactionHistoryLimit(cfg?: OpenClawConfig): number {
+  const raw = cfg?.agents?.defaults?.compaction?.historyLimit;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return Math.min(0.9, Math.max(0.1, raw));
+  }
+  return DEFAULT_COMPACTION_HISTORY_LIMIT;
+}
+
+function estimatePromptTokens(prompt: string): number {
+  if (!prompt) {
+    return 0;
+  }
+  const message = {
+    role: "user",
+    content: [{ type: "text", text: prompt }],
+    timestamp: Date.now(),
+  } as AgentMessage;
+  return estimateMessagesTokens([message]);
+}
+
+async function estimateSessionHistoryTokens(sessionFile: string): Promise<number | null> {
+  try {
+    await fs.stat(sessionFile);
+  } catch {
+    return 0;
+  }
+  try {
+    const sessionManager = SessionManager.open(sessionFile);
+    const context = sessionManager.buildSessionContext();
+    const messages = Array.isArray(context?.messages) ? context.messages : [];
+    return estimateMessagesTokens(messages);
+  } catch {
+    return null;
+  }
+}
+
+async function estimateSystemPromptAndToolTokens(params: {
+  workspaceDir: string;
+  config?: OpenClawConfig;
+  sessionKey?: string;
+  sessionId: string;
+  provider: string;
+  modelId: string;
+  agentDir: string;
+  messageChannel?: string;
+  messageProvider?: string;
+  agentAccountId?: string;
+  messageTo?: string;
+  messageThreadId?: string | number;
+  groupId?: string | null;
+  groupChannel?: string | null;
+  groupSpace?: string | null;
+  spawnedBy?: string | null;
+  senderId?: string;
+  senderName?: string;
+  senderUsername?: string;
+  senderE164?: string;
+  bashElevated?: ExecElevatedDefaults;
+  thinkLevel?: ThinkLevel;
+  reasoningLevel?: ReasoningLevel;
+  extraSystemPrompt?: string;
+  disableTools?: boolean;
+}): Promise<number> {
+  try {
+    const { resolveSandboxContext } = await import("../sandbox.js");
+    const { resolveBootstrapContextForRun, makeBootstrapWarn } = await import(
+      "../bootstrap-files.js"
+    );
+    const { resolveSessionAgentIds } = await import("../agent-scope.js");
+    const { buildSystemPromptParams } = await import("../system-prompt-params.js");
+    const { getMachineDisplayName } = await import("../../infra/machine-name.js");
+    const { normalizeMessageChannel } = await import("../../utils/message-channel.js");
+    const { resolveChannelCapabilities } = await import("../../config/channel-capabilities.js");
+    const { resolveModelAuthMode } = await import("../model-auth.js");
+    const { resolveDefaultModelForAgent } = await import("../model-selection.js");
+    const { isSubagentSessionKey } = await import("../../routing/session-key.js");
+    const { resolveOpenClawDocsPath } = await import("../docs-path.js");
+    const { buildTtsSystemPromptHint } = await import("../../tts/tts.js");
+    const { resolveHeartbeatPrompt } = await import("../../auto-reply/heartbeat.js");
+    const { loadWorkspaceSkillEntries, resolveSkillsPromptForRun } = await import("../skills.js");
+    const { buildModelAliasLines } = await import("./model.js");
+    const { sanitizeToolsForGoogle } = await import("./google.js");
+    const { DEFAULT_BOOTSTRAP_FILENAME } = await import("../workspace.js");
+    const { resolveSandboxRuntimeStatus } = await import("../sandbox.js");
+    const { isReasoningTagProvider } = await import("../../utils/provider-utils.js");
+    const { listChannelSupportedActions, resolveChannelMessageToolHints } = await import(
+      "../channel-tools.js"
+    );
+    const { resolveTelegramInlineButtonsScope } = await import("../../telegram/inline-buttons.js");
+    const { resolveTelegramReactionLevel } = await import("../../telegram/reaction-level.js");
+    const { resolveSignalReactionLevel } = await import("../../signal/reaction-level.js");
+    const { buildDbRecallContext } = await import("./run/attempt.js");
+
+    const effectiveWorkspace = resolveUserPath(params.workspaceDir);
+    const sandboxSessionKey = params.sessionKey?.trim() || params.sessionId;
+    const sandbox = await resolveSandboxContext({
+      config: params.config,
+      sessionKey: sandboxSessionKey,
+      workspaceDir: effectiveWorkspace,
+    });
+    const { bootstrapFiles: hookAdjustedBootstrapFiles, contextFiles } =
+      await resolveBootstrapContextForRun({
+        workspaceDir: effectiveWorkspace,
+        config: params.config,
+        sessionKey: params.sessionKey,
+        sessionId: params.sessionId,
+        warn: makeBootstrapWarn({
+          sessionLabel: sandboxSessionKey,
+          warn: (message) => log.debug(message),
+        }),
+      });
+    const { sessionAgentId } = resolveSessionAgentIds({
+      sessionKey: params.sessionKey ?? params.sessionId,
+      config: params.config,
+    });
+    const recallContext = await buildDbRecallContext({
+      config: params.config,
+      agentId: sessionAgentId ?? "main",
+      sessionKey: params.sessionKey ?? params.sessionId,
+      query: "",
+      contextFiles,
+    }).catch(() => null);
+    const augmentedContextFiles = recallContext
+      ? [...contextFiles, recallContext]
+      : contextFiles;
+    const workspaceNotes = hookAdjustedBootstrapFiles.some(
+      (file) => file.name === DEFAULT_BOOTSTRAP_FILENAME && !file.missing,
+    )
+      ? ["Reminder: commit your changes in this workspace after edits."]
+      : undefined;
+
+    const modelHasVision = false; // Conservative estimate
+    const toolsRaw = params.disableTools
+      ? []
+      : createOpenClawCodingTools({
+          exec: {
+            elevated: params.bashElevated,
+          },
+          sandbox,
+          messageProvider: params.messageChannel ?? params.messageProvider,
+          agentAccountId: params.agentAccountId,
+          messageTo: params.messageTo,
+          messageThreadId: params.messageThreadId,
+          groupId: params.groupId,
+          groupChannel: params.groupChannel,
+          groupSpace: params.groupSpace,
+          spawnedBy: params.spawnedBy,
+          senderId: params.senderId,
+          senderName: params.senderName,
+          senderUsername: params.senderUsername,
+          senderE164: params.senderE164,
+          sessionKey: params.sessionKey ?? params.sessionId,
+          agentDir: params.agentDir,
+          workspaceDir: effectiveWorkspace,
+          config: params.config,
+          abortSignal: new AbortController().signal,
+          modelProvider: params.provider,
+          modelId: params.modelId,
+          modelAuthMode: resolveModelAuthMode(params.provider, params.config),
+          modelHasVision,
+        });
+    const tools = sanitizeToolsForGoogle({ tools: toolsRaw, provider: params.provider });
+
+    // Estimate tool tokens by serializing schemas
+    let toolTokens = 0;
+    for (const tool of tools) {
+      if (tool.parameters && typeof tool.parameters === "object") {
+        try {
+          const schemaStr = JSON.stringify(tool.parameters);
+          toolTokens += estimatePromptTokens(schemaStr);
+        } catch {
+          toolTokens += 100; // Fallback estimate per tool
+        }
+      }
+      if (tool.description) {
+        toolTokens += estimatePromptTokens(tool.description);
+      }
+      toolTokens += estimatePromptTokens(tool.name);
+    }
+
+    const machineName = await getMachineDisplayName();
+    const runtimeChannel = normalizeMessageChannel(params.messageChannel ?? params.messageProvider);
+    const runtimeCapabilities = runtimeChannel
+      ? resolveChannelCapabilities({
+          cfg: params.config,
+          channel: runtimeChannel,
+          accountId: params.agentAccountId,
+        }) ?? []
+      : undefined;
+    const { sessionAgentId: sessionAgentId2 } = resolveSessionAgentIds({
+      sessionKey: params.sessionKey,
+      config: params.config,
+    });
+    const defaultModelRef = resolveDefaultModelForAgent({
+      cfg: params.config ?? {},
+      agentId: sessionAgentId2,
+    });
+    const defaultModelLabel = `${params.provider}/${params.modelId}`;
+    const { runtimeInfo, userTimezone, userTime, userTimeFormat } = buildSystemPromptParams({
+      config: params.config,
+      agentId: sessionAgentId2,
+      workspaceDir: effectiveWorkspace,
+      cwd: effectiveWorkspace,
+      runtime: {
+        host: machineName,
+        os: "unknown",
+        arch: "unknown",
+        node: process.version,
+        model: `${params.provider}/${params.modelId}`,
+        defaultModel: defaultModelLabel,
+        channel: runtimeChannel,
+        capabilities: runtimeCapabilities,
+      },
+    });
+    const isDefaultAgent = sessionAgentId2 === "main";
+    const promptMode = isSubagentSessionKey(params.sessionKey) ? "minimal" : "full";
+    const docsPath = await resolveOpenClawDocsPath({
+      workspaceDir: effectiveWorkspace,
+      argv1: process.argv[1],
+      cwd: effectiveWorkspace,
+      moduleUrl: import.meta.url,
+    });
+    const ttsHint = params.config ? buildTtsSystemPromptHint(params.config) : undefined;
+    const skillEntries = loadWorkspaceSkillEntries(effectiveWorkspace);
+    const skillsPrompt = resolveSkillsPromptForRun({
+      entries: skillEntries,
+      config: params.config,
+      workspaceDir: effectiveWorkspace,
+    });
+    const reasoningTagHint = isReasoningTagProvider(params.provider);
+
+    const systemPrompt = buildEmbeddedSystemPrompt({
+      workspaceDir: effectiveWorkspace,
+      defaultThinkLevel: params.thinkLevel,
+      reasoningLevel: params.reasoningLevel ?? "off",
+      extraSystemPrompt: params.extraSystemPrompt,
+      reasoningTagHint,
+      heartbeatPrompt: isDefaultAgent
+        ? resolveHeartbeatPrompt(params.config?.agents?.defaults?.heartbeat?.prompt)
+        : undefined,
+      skillsPrompt,
+      docsPath: docsPath ?? undefined,
+      ttsHint,
+      workspaceNotes,
+      promptMode,
+      runtimeInfo,
+      sandboxInfo: sandbox ? { enabled: sandbox.enabled } : undefined,
+      tools,
+      modelAliasLines: buildModelAliasLines(params.config),
+      userTimezone,
+      userTime,
+      userTimeFormat,
+      contextFiles: augmentedContextFiles,
+    });
+
+    const systemPromptTokens = estimatePromptTokens(systemPrompt);
+
+    return systemPromptTokens + toolTokens;
+  } catch (err) {
+    log.debug(`system prompt/tool token estimation failed: ${String(err)}`);
+    // Conservative fallback: assume 5000 tokens for system prompt + tools
+    return 5000;
+  }
 }
 
 export async function runEmbeddedPiAgent(
@@ -119,6 +392,10 @@ export async function runEmbeddedPiAgent(
         modelContextWindow: model.contextWindow,
         defaultTokens: DEFAULT_CONTEXT_TOKENS,
       });
+      log.debug(
+        `run context window: ${ctxInfo.tokens} tokens (source=${ctxInfo.source}) for ${provider}/${modelId}`,
+      );
+      const compactionHistoryLimit = resolveCompactionHistoryLimit(params.config);
       const ctxGuard = evaluateContextWindowGuard({
         info: ctxInfo,
         warnBelowTokens: CONTEXT_WINDOW_WARN_BELOW_TOKENS,
@@ -315,6 +592,76 @@ export async function runEmbeddedPiAgent(
           const prompt =
             provider === "anthropic" ? scrubAnthropicRefusalMagic(params.prompt) : params.prompt;
 
+          const preHistoryTokens = await estimateSessionHistoryTokens(params.sessionFile);
+          if (preHistoryTokens !== null) {
+            const promptTokens = estimatePromptTokens(prompt);
+            const systemPromptAndToolTokens = await estimateSystemPromptAndToolTokens({
+              workspaceDir: params.workspaceDir,
+              config: params.config,
+              sessionKey: params.sessionKey,
+              sessionId: params.sessionId,
+              provider,
+              modelId,
+              agentDir,
+              messageChannel: params.messageChannel,
+              messageProvider: params.messageProvider,
+              agentAccountId: params.agentAccountId,
+              messageTo: params.messageTo,
+              messageThreadId: params.messageThreadId,
+              groupId: params.groupId,
+              groupChannel: params.groupChannel,
+              groupSpace: params.groupSpace,
+              spawnedBy: params.spawnedBy,
+              senderId: params.senderId ?? undefined,
+              senderName: params.senderName ?? undefined,
+              senderUsername: params.senderUsername ?? undefined,
+              senderE164: params.senderE164 ?? undefined,
+              bashElevated: params.bashElevated,
+              thinkLevel,
+              reasoningLevel: params.reasoningLevel,
+              extraSystemPrompt: params.extraSystemPrompt,
+              disableTools: params.disableTools,
+            });
+            const totalTokens =
+              preHistoryTokens + promptTokens + systemPromptAndToolTokens;
+            if (totalTokens > ctxInfo.tokens) {
+              log.warn(
+                `pre-run compaction: estimated ${totalTokens}/${ctxInfo.tokens} tokens ` +
+                  `(history=${preHistoryTokens}, prompt=${promptTokens}, system+tools=${systemPromptAndToolTokens}) ` +
+                  `for ${provider}/${modelId}`,
+              );
+              const compactResult = await compactEmbeddedPiSessionDirect({
+                sessionId: params.sessionId,
+                sessionKey: params.sessionKey,
+                messageChannel: params.messageChannel,
+                messageProvider: params.messageProvider,
+                agentAccountId: params.agentAccountId,
+                authProfileId: lastProfileId,
+                sessionFile: params.sessionFile,
+                workspaceDir: params.workspaceDir,
+                agentDir,
+                config: params.config,
+                skillsSnapshot: params.skillsSnapshot,
+                provider,
+                model: modelId,
+                thinkLevel,
+                reasoningLevel: params.reasoningLevel,
+                bashElevated: params.bashElevated,
+                extraSystemPrompt: params.extraSystemPrompt,
+                ownerNumbers: params.ownerNumbers,
+              });
+              if (compactResult.compacted) {
+                log.info(`pre-run compaction succeeded for ${provider}/${modelId}`);
+              } else {
+                log.warn(
+                  `pre-run compaction failed for ${provider}/${modelId}: ${
+                    compactResult.reason ?? "nothing to compact"
+                  }`,
+                );
+              }
+            }
+          }
+
           const attempt = await runEmbeddedAttempt({
             sessionId: params.sessionId,
             sessionKey: params.sessionKey,
@@ -373,6 +720,15 @@ export async function runEmbeddedPiAgent(
 
           const { aborted, promptError, timedOut, sessionIdUsed, lastAssistant } = attempt;
 
+          // Log assistant message errors (from streaming failures) for debugging
+          if (lastAssistant?.errorMessage && !aborted) {
+            const errorMsg = lastAssistant.errorMessage.trim();
+            log.error(
+              `embedded run assistant error: runId=${params.runId} sessionId=${sessionIdUsed} ` +
+                `provider=${provider} model=${modelId} error=${errorMsg.slice(0, 500)}${errorMsg.length > 500 ? "…" : ""}`,
+            );
+          }
+
           if (promptError && !aborted) {
             const errorText = describeUnknownError(promptError);
             if (isContextOverflowError(errorText)) {
@@ -384,14 +740,11 @@ export async function runEmbeddedPiAgent(
                   `error=${errorText.slice(0, 200)}`,
               );
               const isCompactionFailure = isCompactionFailureError(errorText);
-              // Attempt auto-compaction on context overflow (not compaction_failure)
-              if (
-                !isCompactionFailure &&
-                overflowCompactionAttempts < MAX_OVERFLOW_COMPACTION_ATTEMPTS
-              ) {
-                overflowCompactionAttempts++;
+              // Attempt auto-compaction on context overflow (not compaction_failure).
+              // Trigger is the error message from the API or pi-ai, not our token estimate.
+              if (!isCompactionFailure && !overflowCompactionAttempted) {
                 log.warn(
-                  `context overflow detected (attempt ${overflowCompactionAttempts}/${MAX_OVERFLOW_COMPACTION_ATTEMPTS}); attempting auto-compaction for ${provider}/${modelId}`,
+                  `context overflow detected; attempting auto-compaction for ${provider}/${modelId} (error: ${errorText.slice(0, 200)}${errorText.length > 200 ? "…" : ""})`,
                 );
                 const compactResult = await compactEmbeddedPiSessionDirect({
                   sessionId: params.sessionId,
@@ -648,6 +1001,48 @@ export async function runEmbeddedPiAgent(
             model: lastAssistant?.model ?? model.id,
             usage,
           };
+
+          const postHistoryTokens = attempt.messagesSnapshot
+            ? estimateMessagesTokens(attempt.messagesSnapshot)
+            : null;
+          if (
+            postHistoryTokens !== null &&
+            postHistoryTokens > ctxInfo.tokens * compactionHistoryLimit
+          ) {
+            log.info(
+              `proactive compaction: history ${postHistoryTokens}/${ctxInfo.tokens} ` +
+                `(${Math.round(compactionHistoryLimit * 100)}% limit) for ${provider}/${modelId}`,
+            );
+            const compactResult = await compactEmbeddedPiSessionDirect({
+              sessionId: params.sessionId,
+              sessionKey: params.sessionKey,
+              messageChannel: params.messageChannel,
+              messageProvider: params.messageProvider,
+              agentAccountId: params.agentAccountId,
+              authProfileId: lastProfileId,
+              sessionFile: params.sessionFile,
+              workspaceDir: params.workspaceDir,
+              agentDir,
+              config: params.config,
+              skillsSnapshot: params.skillsSnapshot,
+              provider,
+              model: modelId,
+              thinkLevel,
+              reasoningLevel: params.reasoningLevel,
+              bashElevated: params.bashElevated,
+              extraSystemPrompt: params.extraSystemPrompt,
+              ownerNumbers: params.ownerNumbers,
+            });
+            if (compactResult.compacted) {
+              log.info(`proactive compaction succeeded for ${provider}/${modelId}`);
+            } else {
+              log.warn(
+                `proactive compaction failed for ${provider}/${modelId}: ${
+                  compactResult.reason ?? "nothing to compact"
+                }`,
+              );
+            }
+          }
 
           const payloads = buildEmbeddedRunPayloads({
             assistantTexts: attempt.assistantTexts,

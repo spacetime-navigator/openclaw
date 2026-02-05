@@ -82,8 +82,12 @@ type IsVoiceCompatibleAudio = typeof import("../../media/audio.js").isVoiceCompa
 type GetImageMetadata = typeof import("../../media/image-ops.js").getImageMetadata;
 type ResizeToJpeg = typeof import("../../media/image-ops.js").resizeToJpeg;
 type CreateMemoryGetTool = typeof import("../../agents/tools/memory-tool.js").createMemoryGetTool;
+type CreateMemoryRecallTool =
+  typeof import("../../agents/tools/memory-tool.js").createMemoryRecallTool;
 type CreateMemorySearchTool =
   typeof import("../../agents/tools/memory-tool.js").createMemorySearchTool;
+type CreateActorLookupTool =
+  typeof import("../../agents/tools/actor-tool.js").createActorLookupTool;
 type RegisterMemoryCli = typeof import("../../cli/memory-cli.js").registerMemoryCli;
 type DiscordMessageActions =
   typeof import("../../channels/plugins/actions/discord.js").discordMessageActions;
@@ -198,7 +202,9 @@ export type PluginRuntime = {
     textToSpeechTelephony: TextToSpeechTelephony;
   };
   tools: {
+    createActorLookupTool: CreateActorLookupTool;
     createMemoryGetTool: CreateMemoryGetTool;
+    createMemoryRecallTool: CreateMemoryRecallTool;
     createMemorySearchTool: CreateMemorySearchTool;
     registerMemoryCli: RegisterMemoryCli;
   };

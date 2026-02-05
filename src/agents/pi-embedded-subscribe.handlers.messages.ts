@@ -198,6 +198,27 @@ export function handleMessageEnd(
   }
 
   const assistantMessage = msg;
+  
+  // Log errors from assistant messages (e.g., when LM Studio errors during streaming)
+  const errorMessage = (assistantMessage as { errorMessage?: string }).errorMessage;
+  const stopReason = (assistantMessage as { stopReason?: string }).stopReason;
+  if (errorMessage || stopReason === "error") {
+    const errMsg = errorMessage?.trim() || "Unknown error (stopReason=error)";
+    // Log with more context: stopReason helps identify if it's a termination vs error
+    const context = stopReason ? `stopReason=${stopReason} ` : "";
+    ctx.log.warn(
+      `embedded run assistant message error: runId=${ctx.params.runId} sessionId=${(ctx.params.session as { id?: string }).id ?? "unknown"} ` +
+        `${context}error=${errMsg.slice(0, 500)}${errMsg.length > 500 ? "…" : ""}`,
+    );
+    // If stopReason is "terminated", this might be LM Studio timing out or closing the connection
+    if (stopReason === "terminated" || errMsg.toLowerCase().includes("terminated")) {
+      ctx.log.warn(
+        `embedded run stream terminated by provider: runId=${ctx.params.runId} ` +
+          `(check LM Studio logs for timeout/error details - may have hit LM Studio's timeout limit)`,
+      );
+    }
+  }
+  
   promoteThinkingTagsToBlocks(assistantMessage);
 
   const rawText = extractAssistantText(assistantMessage);

@@ -2,8 +2,10 @@ import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { createEditTool, createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 import { detectMime } from "../media/mime.js";
+import { resolveSandboxPath } from "./sandbox-paths.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
 import { sanitizeToolResultImages } from "./tool-images.js";
+import { isAllowedWritablePath } from "./workspace.js";
 
 // NOTE(steipete): Upstream read now does file-magic MIME detection; we keep the wrapper
 // to normalize payloads and sanitize oversized images before they hit providers.
@@ -268,6 +270,29 @@ function wrapSandboxPathGuard(tool: AnyAgentTool, root: string): AnyAgentTool {
   };
 }
 
+/** Restricts write/edit to allowed workspace files only (memory, BOOTSTRAP, HEARTBEAT, *_PLUS, AGENTS). SOUL/IDENTITY/USER/TOOLS are immutable; allowlist lives in OpenClaw source (PR-only). */
+export function wrapWritablePathAllowlist(tool: AnyAgentTool, root: string): AnyAgentTool {
+  return {
+    ...tool,
+    execute: async (toolCallId, args, signal, onUpdate) => {
+      const normalized = normalizeToolParams(args);
+      const record =
+        normalized ??
+        (args && typeof args === "object" ? (args as Record<string, unknown>) : undefined);
+      const filePath = record?.path ?? record?.file_path;
+      if (typeof filePath === "string" && filePath.trim()) {
+        const { relative } = resolveSandboxPath({ filePath, cwd: root, root });
+        if (!isAllowedWritablePath(relative)) {
+          throw new Error(
+            `Edits are only allowed to memory files, BOOTSTRAP.md, HEARTBEAT.md, *_PLUS.md, and AGENTS.md. Path not allowed: ${relative}. SOUL/IDENTITY/USER/TOOLS are immutable (PR-only for TOOLS).`,
+          );
+        }
+      }
+      return tool.execute(toolCallId, normalized ?? args, signal, onUpdate);
+    },
+  };
+}
+
 export function createSandboxedReadTool(root: string) {
   const base = createReadTool(root) as unknown as AnyAgentTool;
   return wrapSandboxPathGuard(createOpenClawReadTool(base), root);
@@ -275,12 +300,18 @@ export function createSandboxedReadTool(root: string) {
 
 export function createSandboxedWriteTool(root: string) {
   const base = createWriteTool(root) as unknown as AnyAgentTool;
-  return wrapSandboxPathGuard(wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.write), root);
+  return wrapWritablePathAllowlist(
+    wrapSandboxPathGuard(wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.write), root),
+    root,
+  );
 }
 
 export function createSandboxedEditTool(root: string) {
   const base = createEditTool(root) as unknown as AnyAgentTool;
-  return wrapSandboxPathGuard(wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.edit), root);
+  return wrapWritablePathAllowlist(
+    wrapSandboxPathGuard(wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.edit), root),
+    root,
+  );
 }
 
 export function createOpenClawReadTool(base: AnyAgentTool): AnyAgentTool {

@@ -6,12 +6,13 @@ import {
   QueueSchema,
   TtsConfigSchema,
 } from "./zod-schema.core.js";
+import { numberFromEnv } from "./zod-helpers.js";
 
 const SessionResetConfigSchema = z
   .object({
     mode: z.union([z.literal("daily"), z.literal("idle")]).optional(),
     atHour: z.number().int().min(0).max(23).optional(),
-    idleMinutes: z.number().int().positive().optional(),
+    idleMinutes: numberFromEnv(z.number().int().positive()).optional(),
   })
   .strict();
 
@@ -53,7 +54,7 @@ export const SessionSchema = z
       .optional(),
     identityLinks: z.record(z.string(), z.array(z.string())).optional(),
     resetTriggers: z.array(z.string()).optional(),
-    idleMinutes: z.number().int().positive().optional(),
+    idleMinutes: numberFromEnv(z.number().int().positive()).optional(),
     reset: SessionResetConfigSchema.optional(),
     resetByType: z
       .object({
@@ -66,6 +67,7 @@ export const SessionSchema = z
     resetByChannel: z.record(z.string(), SessionResetConfigSchema).optional(),
     store: z.string().optional(),
     typingIntervalSeconds: z.number().int().positive().optional(),
+    typingTtlMinutes: z.number().int().positive().optional(),
     typingMode: z
       .union([
         z.literal("never"),

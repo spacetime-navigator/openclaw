@@ -1,5 +1,5 @@
 export type CompactionSafeguardRuntimeValue = {
-  maxHistoryShare?: number;
+  historyLimit?: number;
   contextWindowTokens?: number;
 };
 

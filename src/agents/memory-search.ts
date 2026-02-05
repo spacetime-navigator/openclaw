@@ -32,8 +32,18 @@ export type ResolvedMemorySearchConfig = {
     modelCacheDir?: string;
   };
   store: {
-    driver: "sqlite";
+    driver: "sqlite" | "postgres";
     path: string;
+    postgres?: {
+      connectionString?: string;
+      host?: string;
+      port?: number;
+      user?: string;
+      password?: string;
+      database?: string;
+      ssl?: boolean;
+      schema?: string;
+    };
     vector: {
       enabled: boolean;
       extensionPath?: string;
@@ -68,6 +78,7 @@ export type ResolvedMemorySearchConfig = {
     enabled: boolean;
     maxEntries?: number;
   };
+  recentWindowMessages: number;
 };
 
 const DEFAULT_OPENAI_MODEL = "text-embedding-3-small";
@@ -85,6 +96,7 @@ const DEFAULT_HYBRID_TEXT_WEIGHT = 0.3;
 const DEFAULT_HYBRID_CANDIDATE_MULTIPLIER = 4;
 const DEFAULT_CACHE_ENABLED = true;
 const DEFAULT_SOURCES: Array<"memory" | "sessions"> = ["memory"];
+const DEFAULT_RECENT_WINDOW_MESSAGES = 10;
 
 function normalizeSources(
   sources: Array<"memory" | "sessions"> | undefined,
@@ -179,9 +191,26 @@ function mergeConfig(
     extensionPath:
       overrides?.store?.vector?.extensionPath ?? defaults?.store?.vector?.extensionPath,
   };
+  const driver = overrides?.store?.driver ?? defaults?.store?.driver ?? "sqlite";
+  const postgres =
+    driver === "postgres"
+      ? {
+          connectionString:
+            overrides?.store?.postgres?.connectionString ??
+            defaults?.store?.postgres?.connectionString,
+          host: overrides?.store?.postgres?.host ?? defaults?.store?.postgres?.host,
+          port: overrides?.store?.postgres?.port ?? defaults?.store?.postgres?.port,
+          user: overrides?.store?.postgres?.user ?? defaults?.store?.postgres?.user,
+          password: overrides?.store?.postgres?.password ?? defaults?.store?.postgres?.password,
+          database: overrides?.store?.postgres?.database ?? defaults?.store?.postgres?.database,
+          ssl: overrides?.store?.postgres?.ssl ?? defaults?.store?.postgres?.ssl,
+          schema: overrides?.store?.postgres?.schema ?? defaults?.store?.postgres?.schema,
+        }
+      : undefined;
   const store = {
-    driver: overrides?.store?.driver ?? defaults?.store?.driver ?? "sqlite",
+    driver,
     path: resolveStorePath(agentId, overrides?.store?.path ?? defaults?.store?.path),
+    postgres,
     vector,
   };
   const chunking = {
@@ -234,6 +263,10 @@ function mergeConfig(
     enabled: overrides?.cache?.enabled ?? defaults?.cache?.enabled ?? DEFAULT_CACHE_ENABLED,
     maxEntries: overrides?.cache?.maxEntries ?? defaults?.cache?.maxEntries,
   };
+  const recentWindowMessages =
+    overrides?.recentWindowMessages ??
+    defaults?.recentWindowMessages ??
+    DEFAULT_RECENT_WINDOW_MESSAGES;
 
   const overlap = clampNumber(chunking.overlap, 0, Math.max(0, chunking.tokens - 1));
   const minScore = clampNumber(query.minScore, 0, 1);
@@ -283,6 +316,7 @@ function mergeConfig(
           ? Math.max(1, Math.floor(cache.maxEntries))
           : undefined,
     },
+    recentWindowMessages: Math.max(1, Math.floor(recentWindowMessages)),
   };
 }
 

@@ -90,6 +90,8 @@ export type SessionConfig = {
   resetByChannel?: Record<string, SessionResetConfig>;
   store?: string;
   typingIntervalSeconds?: number;
+  /** Typing indicator TTL in minutes; stop after this long (default: 3). */
+  typingTtlMinutes?: number;
   typingMode?: TypingMode;
   mainKey?: string;
   sendPolicy?: SessionSendPolicyConfig;

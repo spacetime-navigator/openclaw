@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { numberFromEnv } from "./zod-helpers.js";
 import {
   HeartbeatSchema,
   MemorySearchSchema,
@@ -92,11 +93,11 @@ export const AgentDefaultsSchema = z
       .object({
         mode: z.union([z.literal("default"), z.literal("safeguard")]).optional(),
         reserveTokensFloor: z.number().int().nonnegative().optional(),
-        maxHistoryShare: z.number().min(0.1).max(0.9).optional(),
+        historyLimit: numberFromEnv(z.number().min(0.1).max(0.9)).optional(),
         memoryFlush: z
           .object({
             enabled: z.boolean().optional(),
-            softThresholdTokens: z.number().int().nonnegative().optional(),
+            softThresholdTokens: numberFromEnv(z.number().int().nonnegative()).optional(),
             prompt: z.string().optional(),
             systemPrompt: z.string().optional(),
           })
@@ -127,6 +128,8 @@ export const AgentDefaultsSchema = z
     timeoutSeconds: z.number().int().positive().optional(),
     mediaMaxMb: z.number().positive().optional(),
     typingIntervalSeconds: z.number().int().positive().optional(),
+    /** Typing indicator TTL in minutes; stop after this long (default: 3). */
+    typingTtlMinutes: z.number().int().positive().optional(),
     typingMode: z
       .union([
         z.literal("never"),

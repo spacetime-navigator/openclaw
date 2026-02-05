@@ -26,6 +26,7 @@ import {
 } from "../../config/sessions.js";
 import { logVerbose } from "../../globals.js";
 import { emitAgentEvent, registerAgentRunContext } from "../../infra/agent-events.js";
+import { formatErrorMessage } from "../../infra/errors.js";
 import { defaultRuntime } from "../../runtime.js";
 import {
   isMarkdownCapableMessageChannel,
@@ -225,7 +226,7 @@ export async function runAgentTurnWithFallback(params: {
                     phase: "error",
                     startedAt,
                     endedAt: Date.now(),
-                    error: String(err),
+                    error: formatErrorMessage(err),
                   },
                 });
                 lifecycleTerminalEmitted = true;
@@ -335,6 +336,12 @@ export async function runAgentTurnWithFallback(params: {
                   }
                 : undefined,
             onAgentEvent: async (evt) => {
+              // Refresh typing TTL on any agent event to keep it alive during streaming,
+              // even when the model is buffering tokens and not emitting text deltas.
+              // This handles slow models like LM Studio that may buffer before emitting events.
+              if (params.typingSignals.isActive()) {
+                params.typingSignals.refreshTypingTtl();
+              }
               // Trigger typing when tools start executing.
               // Must await to ensure typing indicator starts before tool summaries are emitted.
               if (evt.stream === "tool") {

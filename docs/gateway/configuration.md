@@ -1927,9 +1927,11 @@ Example (adaptive tuned):
 
 See [/concepts/session-pruning](/concepts/session-pruning) for behavior details.
 
-#### `agents.defaults.compaction` (reserve headroom + memory flush)
+#### `agents.defaults.compaction` (reserve headroom + memory flush + proactive compaction)
 
 `agents.defaults.compaction.mode` selects the compaction summarization strategy. Defaults to `default`; set `safeguard` to enable chunked summarization for very long histories. See [/concepts/compaction](/concepts/compaction).
+
+`agents.defaults.compaction.historyLimit` controls proactive compaction threshold (default: `0.7`). Range: `0.1`–`0.9`. After each successful turn, if history tokens exceed `historyLimit × contextWindow`, compaction runs proactively. Supports environment variable substitution (e.g., `${AESOP_COMPACTION_HISTORY_LIMIT}`).
 
 `agents.defaults.compaction.reserveTokensFloor` enforces a minimum `reserveTokens`
 value for Pi compaction (default: `20000`). Set it to `0` to disable the floor.
@@ -1938,6 +1940,8 @@ value for Pi compaction (default: `20000`). Set it to `0` to disable the floor.
 auto-compaction, instructing the model to store durable memories on disk (e.g.
 `memory/YYYY-MM-DD.md`). It triggers when the session token estimate crosses a
 soft threshold below the compaction limit.
+
+**Pre-run compaction**: Before sending a request, OpenClaw estimates total tokens (history + prompt + system prompt + tool definitions). If this would exceed the context window, compaction runs proactively to prevent overflow.
 
 Legacy defaults:
 
@@ -1955,6 +1959,7 @@ Example (tuned):
     defaults: {
       compaction: {
         mode: "safeguard",
+        historyLimit: 0.7,  // Compact when history > 70% of context window
         reserveTokensFloor: 24000,
         memoryFlush: {
           enabled: true,
@@ -2529,6 +2534,35 @@ Notes:
   endpoint, define a custom provider in `models.providers` with the base URL
   override (see the custom providers section above).
 - Use a fake placeholder in docs/configs; never commit real API keys.
+
+### GLM-4.7-Flash-MLX — primary default (LM Studio)
+
+The default primary model is `lm-studio/glm-4.7-flash-mlx` (120k context, 16k max tokens), using
+**LM Studio** as the provider. Start the LM Studio local server (default `http://127.0.0.1:1234`),
+load GLM-4.7-Flash-MLX, and the implicit `lm-studio` provider is merged into `models.json`. No config or API key required for local use.
+
+To set explicitly:
+
+```json5
+{
+  agents: {
+    defaults: {
+      model: { primary: "lm-studio/glm-4.7-flash-mlx" },
+      models: { "lm-studio/glm-4.7-flash-mlx": { alias: "GLM" } },
+    },
+  },
+}
+```
+
+Notes:
+
+- Base URL: `http://127.0.0.1:1234/v1` (LM Studio local server).
+- Context window: 120,000 tokens; max output: 16,384 tokens.
+- Alias: `glm` in model selection resolves to `lm-studio/glm-4.7-flash-mlx`.
+
+### Qwen (qwen3-coder-next) via LM Studio
+
+For `qwen/qwen3-coder-next` (200k context), load the model in LM Studio; the implicit `qwen` provider points at the same local server. Override `models.providers.qwen.baseUrl` and set `QWEN_API_KEY` to use DashScope instead.
 
 ### Moonshot AI (Kimi)
 

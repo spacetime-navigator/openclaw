@@ -10,6 +10,7 @@ import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
+import { formatErrorMessage } from "../../infra/errors.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
 import {
@@ -573,14 +574,15 @@ export const chatHandlers: GatewayRequestHandlers = {
           });
         })
         .catch((err) => {
-          const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
+          const errMsg = formatErrorMessage(err);
+          const error = errorShape(ErrorCodes.UNAVAILABLE, errMsg);
           context.dedupe.set(`chat:${clientRunId}`, {
             ts: Date.now(),
             ok: false,
             payload: {
               runId: clientRunId,
               status: "error" as const,
-              summary: String(err),
+              summary: errMsg,
             },
             error,
           });
@@ -588,18 +590,19 @@ export const chatHandlers: GatewayRequestHandlers = {
             context,
             runId: clientRunId,
             sessionKey: p.sessionKey,
-            errorMessage: String(err),
+            errorMessage: errMsg,
           });
         })
         .finally(() => {
           context.chatAbortControllers.delete(clientRunId);
         });
     } catch (err) {
-      const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
+      const errMsg = formatErrorMessage(err);
+      const error = errorShape(ErrorCodes.UNAVAILABLE, errMsg);
       const payload = {
         runId: clientRunId,
         status: "error" as const,
-        summary: String(err),
+        summary: errMsg,
       };
       context.dedupe.set(`chat:${clientRunId}`, {
         ts: Date.now(),

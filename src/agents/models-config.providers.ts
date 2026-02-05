@@ -69,6 +69,30 @@ const QWEN_PORTAL_DEFAULT_COST = {
   cacheWrite: 0,
 };
 
+// LM Studio (local) — default: GLM-4.7-Flash-MLX, 120k context
+const LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1";
+const LM_STUDIO_GLM_MODEL_ID = "glm-4.7-flash-mlx";
+const LM_STUDIO_GLM_CONTEXT_WINDOW = 120000;
+const LM_STUDIO_GLM_MAX_TOKENS = 16384;
+const LM_STUDIO_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+
+// Qwen (LM Studio local): qwen3-coder-next
+const QWEN_LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1";
+const QWEN_DEFAULT_MODEL_ID = "qwen3-coder-next";
+const QWEN_DEFAULT_CONTEXT_WINDOW = 200000;
+const QWEN_DEFAULT_MAX_TOKENS = 16384;
+const QWEN_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+
 const OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1";
 const OLLAMA_API_BASE_URL = "http://127.0.0.1:11434";
 const OLLAMA_DEFAULT_CONTEXT_WINDOW = 128000;
@@ -359,6 +383,42 @@ function buildQwenPortalProvider(): ProviderConfig {
   };
 }
 
+function buildLmStudioGlmProvider(): ProviderConfig {
+  return {
+    baseUrl: LM_STUDIO_BASE_URL,
+    api: "openai-completions",
+    models: [
+      {
+        id: LM_STUDIO_GLM_MODEL_ID,
+        name: "GLM-4.7-Flash-MLX",
+        reasoning: false,
+        input: ["text"],
+        cost: LM_STUDIO_DEFAULT_COST,
+        contextWindow: LM_STUDIO_GLM_CONTEXT_WINDOW,
+        maxTokens: LM_STUDIO_GLM_MAX_TOKENS,
+      },
+    ],
+  };
+}
+
+function buildQwenProvider(): ProviderConfig {
+  return {
+    baseUrl: QWEN_LM_STUDIO_BASE_URL,
+    api: "openai-completions",
+    models: [
+      {
+        id: QWEN_DEFAULT_MODEL_ID,
+        name: "Qwen3 Coder Next",
+        reasoning: false,
+        input: ["text"],
+        cost: QWEN_DEFAULT_COST,
+        contextWindow: QWEN_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: QWEN_DEFAULT_MAX_TOKENS,
+      },
+    ],
+  };
+}
+
 function buildSyntheticProvider(): ProviderConfig {
   return {
     baseUrl: SYNTHETIC_BASE_URL,
@@ -454,6 +514,18 @@ export async function resolveImplicitProviders(params: {
       apiKey: QWEN_PORTAL_OAUTH_PLACEHOLDER,
     };
   }
+
+  // lm-studio/glm-4.7-flash-mlx: primary default (LM Studio local, no API key).
+  providers["lm-studio"] = buildLmStudioGlmProvider();
+
+  // qwen/qwen3-coder-next: LM Studio (no API key). Optional QWEN_API_KEY for alternate backends.
+  const qwenKey =
+    resolveEnvApiKeyVarName("qwen") ??
+    resolveApiKeyFromProfiles({ provider: "qwen", store: authStore });
+  providers.qwen = {
+    ...buildQwenProvider(),
+    ...(qwenKey ? { apiKey: qwenKey } : {}),
+  };
 
   const xiaomiKey =
     resolveEnvApiKeyVarName("xiaomi") ??

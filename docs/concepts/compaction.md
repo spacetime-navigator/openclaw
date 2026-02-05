@@ -17,17 +17,26 @@ Compaction **summarizes older conversation** into a compact summary entry and ke
 - The compaction summary
 - Recent messages after the compaction point
 
-Compaction **persists** in the session’s JSONL history.
+Compaction **persists** in the session's JSONL history.
 
 ## Configuration
 
 See [Compaction config & modes](/concepts/compaction) for the `agents.defaults.compaction` settings.
 
+Key settings:
+- `historyLimit` (default: `0.7`): Maximum share of context window for history before proactive compaction triggers. Range: `0.1`–`0.9`.
+- `mode`: Compaction strategy (`default` or `safeguard`).
+- `reserveTokensFloor`: Minimum reserve tokens for compaction headroom.
+
 ## Auto-compaction (default on)
 
-When a session nears or exceeds the model’s context window, OpenClaw triggers auto-compaction and may retry the original request using the compacted context.
+OpenClaw triggers auto-compaction in three cases:
 
-You’ll see:
+1. **Pre-run hard limit**: Before sending a request, if estimated tokens (history + prompt + system + tools) would exceed the context window, compaction runs proactively.
+2. **Proactive threshold**: After each successful turn, if history tokens exceed `historyLimit` × context window, compaction runs to maintain headroom.
+3. **Overflow recovery**: If the model returns a context overflow error, compaction runs and the request is retried.
+
+You'll see:
 
 - `🧹 Auto-compaction complete` in verbose mode
 - `/status` showing `🧹 Compactions: <count>`

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { numberFromEnv } from "./zod-helpers.js";
 import { isSafeExecutableValue } from "../infra/exec-safety.js";
 
 export const ModelApiSchema = z.union([
@@ -38,8 +39,8 @@ export const ModelDefinitionSchema = z
       })
       .strict()
       .optional(),
-    contextWindow: z.number().positive().optional(),
-    maxTokens: z.number().positive().optional(),
+    contextWindow: numberFromEnv(z.number().positive()).optional(),
+    maxTokens: numberFromEnv(z.number().positive()).optional(),
     headers: z.record(z.string(), z.string()).optional(),
     compat: ModelCompatSchema,
   })

@@ -22,6 +22,7 @@ import {
 } from "../../config/sessions.js";
 import { logVerbose } from "../../globals.js";
 import { clearCommandLane, getQueueSize } from "../../process/command-queue.js";
+import { clearSessionQueues } from "./queue.js";
 import { normalizeMainKey } from "../../routing/session-key.js";
 import { isReasoningTagProvider } from "../../utils/provider-utils.js";
 import { hasControlCommand } from "../command-detection.js";
@@ -288,7 +289,14 @@ export async function runPreparedReply(
     }
   }
   if (resetTriggered && command.isAuthorizedSender) {
-    // oxlint-disable-next-line typescript/no-explicit-any
+    // Clear any pending followup messages so the new session starts with no queued prompts.
+    const queueKeys = [sessionKey, sessionId].filter(Boolean) as string[];
+    if (queueKeys.length > 0) {
+      const cleared = clearSessionQueues(queueKeys);
+      if (cleared.followupCleared > 0 || cleared.laneCleared > 0) {
+        logVerbose(`Session reset: cleared ${cleared.followupCleared} queued message(s), ${cleared.laneCleared} lane(s).`);
+      }
+    }
     const channel = ctx.OriginatingChannel || (command.channel as any);
     const to = ctx.OriginatingTo || command.from || command.to;
     if (channel && to) {

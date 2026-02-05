@@ -264,6 +264,13 @@ export class MemoryIndexManager implements MemorySearchManager {
       maxResults?: number;
       minScore?: number;
       sessionKey?: string;
+      sessionScope?: "session" | "actor" | "global";
+      actorId?: string;
+      actorType?: string;
+      role?: string;
+      mode?: "hybrid" | "vector" | "keyword";
+      updatedAfter?: number;
+      updatedBefore?: number;
     },
   ): Promise<MemorySearchResult[]> {
     void this.warmSession(opts?.sessionKey);
@@ -279,22 +286,29 @@ export class MemoryIndexManager implements MemorySearchManager {
     const minScore = opts?.minScore ?? this.settings.query.minScore;
     const maxResults = opts?.maxResults ?? this.settings.query.maxResults;
     const hybrid = this.settings.query.hybrid;
+    const mode =
+      opts?.mode ?? (hybrid.enabled ? "hybrid" : "vector");
     const candidates = Math.min(
       200,
       Math.max(1, Math.floor(maxResults * hybrid.candidateMultiplier)),
     );
 
-    const keywordResults = hybrid.enabled
-      ? await this.searchKeyword(cleaned, candidates).catch(() => [])
-      : [];
+    const keywordResults =
+      mode !== "vector" && hybrid.enabled
+        ? await this.searchKeyword(cleaned, candidates).catch(() => [])
+        : [];
 
-    const queryVec = await this.embedQueryWithTimeout(cleaned);
+    const queryVec = mode !== "keyword" ? await this.embedQueryWithTimeout(cleaned) : [];
     const hasVector = queryVec.some((v) => v !== 0);
-    const vectorResults = hasVector
-      ? await this.searchVector(queryVec, candidates).catch(() => [])
-      : [];
+    const vectorResults =
+      mode !== "keyword" && hasVector
+        ? await this.searchVector(queryVec, candidates).catch(() => [])
+        : [];
 
-    if (!hybrid.enabled) {
+    if (mode === "keyword") {
+      return keywordResults.filter((entry) => entry.score >= minScore).slice(0, maxResults);
+    }
+    if (mode === "vector" || !hybrid.enabled) {
       return vectorResults.filter((entry) => entry.score >= minScore).slice(0, maxResults);
     }
 

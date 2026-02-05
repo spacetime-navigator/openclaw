@@ -20,9 +20,11 @@ import { parseReplyDirectives } from "../../auto-reply/reply/reply-directives.js
 import { dispatchChannelMessageAction } from "../../channels/plugins/message-actions.js";
 import { extensionForMime } from "../../media/mime.js";
 import { parseSlackTarget } from "../../slack/targets.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { parseTelegramTarget } from "../../telegram/targets.js";
 import {
   isDeliverableMessageChannel,
+  isGatewayMessageChannel,
   normalizeMessageChannel,
   type GatewayClientMode,
   type GatewayClientName,
@@ -44,6 +46,8 @@ import {
 import { executePollAction, executeSendAction } from "./outbound-send-service.js";
 import { ensureOutboundSessionEntry, resolveOutboundSessionRoute } from "./outbound-session.js";
 import { resolveChannelTarget, type ResolvedMessagingTarget } from "./target-resolver.js";
+
+const log = createSubsystemLogger("tools/message");
 
 export type MessageActionRunnerGateway = {
   url?: string;
@@ -563,7 +567,15 @@ function parseCardParam(params: Record<string, unknown>): void {
 }
 
 async function resolveChannel(cfg: OpenClawConfig, params: Record<string, unknown>) {
-  const channelHint = readStringParam(params, "channel");
+  let channelHint = readStringParam(params, "channel");
+  if (channelHint && /^\d+$/.test(channelHint)) {
+    const normalized = normalizeMessageChannel(channelHint);
+    if (!normalized || !isGatewayMessageChannel(normalized)) {
+      // Numeric channel id was provided where a provider is expected; ignore it.
+      log.info(`numeric channel used as provider; ignoring channel hint: ${channelHint}`);
+      channelHint = undefined;
+    }
+  }
   const selection = await resolveMessageChannelSelection({
     cfg,
     channel: channelHint,
@@ -858,34 +870,61 @@ async function handleSendAction(ctx: ResolvedActionContext): Promise<MessageActi
   const mirrorMediaUrls =
     mergedMediaUrls.length > 0 ? mergedMediaUrls : mediaUrl ? [mediaUrl] : undefined;
   throwIfAborted(abortSignal);
-  const send = await executeSendAction({
-    ctx: {
-      cfg,
-      channel,
-      params,
-      accountId: accountId ?? undefined,
-      gateway,
-      toolContext: input.toolContext,
-      deps: input.deps,
-      dryRun,
-      mirror:
-        outboundRoute && !dryRun
-          ? {
-              sessionKey: outboundRoute.sessionKey,
-              agentId,
-              text: message,
-              mediaUrls: mirrorMediaUrls,
-            }
-          : undefined,
-      abortSignal,
-    },
-    to,
-    message,
-    mediaUrl: mediaUrl || undefined,
-    mediaUrls: mergedMediaUrls.length ? mergedMediaUrls : undefined,
-    gifPlayback,
-    bestEffort: bestEffort ?? undefined,
-  });
+  const runSend = (targetTo: string) =>
+    executeSendAction({
+      ctx: {
+        cfg,
+        channel,
+        params: { ...params, to: targetTo, target: targetTo },
+        accountId: accountId ?? undefined,
+        gateway,
+        toolContext: input.toolContext,
+        deps: input.deps,
+        dryRun,
+        mirror:
+          outboundRoute && !dryRun
+            ? {
+                sessionKey: outboundRoute.sessionKey,
+                agentId,
+                text: message,
+                mediaUrls: mirrorMediaUrls,
+              }
+            : undefined,
+        abortSignal,
+      },
+      to: targetTo,
+      message,
+      mediaUrl: mediaUrl || undefined,
+      mediaUrls: mergedMediaUrls.length ? mergedMediaUrls : undefined,
+      gifPlayback,
+      bestEffort: bestEffort ?? undefined,
+    });
+  let send: Awaited<ReturnType<typeof executeSendAction>>;
+  try {
+    send = await runSend(to);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const rawFallback = input.toolContext?.currentChannelId?.trim();
+    const fallbackTo =
+      channel === "discord" && rawFallback
+        ? rawFallback.replace(/^channel:/i, "").trim() || rawFallback
+        : rawFallback;
+    if (/Unknown channel/i.test(msg) && fallbackTo && fallbackTo !== to) {
+      send = await runSend(fallbackTo);
+      return {
+        kind: "send",
+        channel,
+        action,
+        to: fallbackTo,
+        handledBy: send.handledBy,
+        payload: send.payload,
+        toolResult: send.toolResult,
+        sendResult: send.sendResult,
+        dryRun,
+      };
+    }
+    throw err;
+  }
 
   return {
     kind: "send",
@@ -1047,10 +1086,56 @@ export async function runMessageAction(
     }
   }
   const explicitChannel = typeof params.channel === "string" ? params.channel.trim() : "";
-  if (!explicitChannel) {
+  if (explicitChannel && /^\d+$/.test(explicitChannel)) {
+    const normalized = normalizeMessageChannel(explicitChannel);
+    if (!normalized || !isGatewayMessageChannel(normalized)) {
+      log.info(`numeric channel passed to message tool: ${explicitChannel}`);
+      // Interpret numeric "channel" as a target id; never treat it as a provider.
+      if (!params.target) {
+        params.target = explicitChannel;
+      }
+      delete params.channel;
+    }
+  }
+  if (!explicitChannel || params.channel === undefined) {
     const inferredChannel = normalizeMessageChannel(input.toolContext?.currentChannelProvider);
     if (inferredChannel && isDeliverableMessageChannel(inferredChannel)) {
       params.channel = inferredChannel;
+    }
+  }
+
+  // Discord: if the model passed a numeric channel/target that looks like a typo of the current
+  // channel (same length, different digits), use the correct currentChannelId so the wrong ID
+  // never comes from config or the model.
+  const channelOrProvider =
+    input.toolContext?.currentChannelProvider ??
+    (typeof params.channel === "string" ? params.channel : undefined);
+  const resolvedProvider = normalizeMessageChannel(channelOrProvider);
+  const rawCurrentId = input.toolContext?.currentChannelId?.trim();
+  const currentChannelIdNumeric =
+    rawCurrentId?.replace(/^channel:/i, "").trim() || rawCurrentId;
+  if (
+    resolvedProvider === "discord" &&
+    currentChannelIdNumeric &&
+    /^\d+$/.test(currentChannelIdNumeric)
+  ) {
+    const modelTarget =
+      typeof params.target === "string"
+        ? params.target.trim()
+        : typeof params.to === "string"
+          ? params.to.trim()
+          : typeof params.channelId === "string"
+            ? params.channelId.trim()
+            : "";
+    if (
+      modelTarget &&
+      /^\d+$/.test(modelTarget) &&
+      modelTarget.length === currentChannelIdNumeric.length &&
+      modelTarget !== currentChannelIdNumeric
+    ) {
+      params.target = currentChannelIdNumeric;
+      delete params.to;
+      delete params.channelId;
     }
   }
 

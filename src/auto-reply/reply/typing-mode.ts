@@ -40,6 +40,8 @@ export type TypingSignaler = {
   signalTextDelta: (text?: string) => Promise<void>;
   signalReasoningDelta: () => Promise<void>;
   signalToolStart: () => Promise<void>;
+  refreshTypingTtl: () => void;
+  isActive: () => boolean;
 };
 
 export function createTypingSignaler(params: {
@@ -138,5 +140,11 @@ export function createTypingSignaler(params: {
     signalTextDelta,
     signalReasoningDelta,
     signalToolStart,
+    refreshTypingTtl: () => {
+      if (!disabled) {
+        typing.refreshTypingTtl();
+      }
+    },
+    isActive: () => typing.isActive(),
   };
 }

@@ -1,17 +1,21 @@
 import type { OpenClawConfig } from "../config/config.js";
-import type { ResolvedQmdConfig } from "./backend-config.js";
-import type {
-  MemoryEmbeddingProbeResult,
-  MemorySearchManager,
-  MemorySyncProgressUpdate,
-} from "./types.js";
-import { createSubsystemLogger } from "../logging/subsystem.js";
-import { resolveMemoryBackendConfig } from "./backend-config.js";
+import { resolveMemorySearchConfig } from "../agents/memory-search.js";
+import type { MemoryIndexManager } from "./manager.js";
 
-const log = createSubsystemLogger("memory");
-const QMD_MANAGER_CACHE = new Map<string, MemorySearchManager>();
+export type MemorySearchManager = Pick<
+  MemoryIndexManager,
+  | "search"
+  | "readFile"
+  | "status"
+  | "probeVectorAvailability"
+  | "probeEmbeddingAvailability"
+  | "close"
+  | "sync"
+  | "warmSession"
+>;
 
 export type MemorySearchManagerResult = {
+  manager: MemorySearchManager | null;
   manager: MemorySearchManager | null;
   error?: string;
 };
@@ -20,43 +24,15 @@ export async function getMemorySearchManager(params: {
   cfg: OpenClawConfig;
   agentId: string;
 }): Promise<MemorySearchManagerResult> {
-  const resolved = resolveMemoryBackendConfig(params);
-  if (resolved.backend === "qmd" && resolved.qmd) {
-    const cacheKey = buildQmdCacheKey(params.agentId, resolved.qmd);
-    const cached = QMD_MANAGER_CACHE.get(cacheKey);
-    if (cached) {
-      return { manager: cached };
-    }
-    try {
-      const { QmdMemoryManager } = await import("./qmd-manager.js");
-      const primary = await QmdMemoryManager.create({
-        cfg: params.cfg,
-        agentId: params.agentId,
-        resolved,
-      });
-      if (primary) {
-        const wrapper = new FallbackMemoryManager(
-          {
-            primary,
-            fallbackFactory: async () => {
-              const { MemoryIndexManager } = await import("./manager.js");
-              return await MemoryIndexManager.get(params);
-            },
-          },
-          () => QMD_MANAGER_CACHE.delete(cacheKey),
-        );
-        QMD_MANAGER_CACHE.set(cacheKey, wrapper);
-        return { manager: wrapper };
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.warn(`qmd memory unavailable; falling back to builtin: ${message}`);
-    }
-  }
-
   try {
-    const { MemoryIndexManager } = await import("./manager.js");
-    const manager = await MemoryIndexManager.get(params);
+    const settings = resolveMemorySearchConfig(params.cfg, params.agentId);
+    if (!settings) {
+      return { manager: null };
+    }
+    const manager =
+      settings.store.driver === "postgres"
+        ? await (await import("./manager-postgres.js")).PostgresMemoryIndexManager.get(params)
+        : await (await import("./manager.js")).MemoryIndexManager.get(params);
     return { manager };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

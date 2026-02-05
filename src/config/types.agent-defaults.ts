@@ -161,6 +161,8 @@ export type AgentDefaultsConfig = {
   /** Max inbound media size in MB for agent-visible attachments (text note or future image attach). */
   mediaMaxMb?: number;
   typingIntervalSeconds?: number;
+  /** Typing indicator TTL in minutes; stop after this long (default: 3). */
+  typingTtlMinutes?: number;
   /** Typing indicator start mode (never|instant|thinking|message). */
   typingMode?: TypingMode;
   /** Periodic background heartbeat runs. */
@@ -250,8 +252,8 @@ export type AgentCompactionConfig = {
   mode?: AgentCompactionMode;
   /** Minimum reserve tokens enforced for Pi compaction (0 disables the floor). */
   reserveTokensFloor?: number;
-  /** Max share of context window for history during safeguard pruning (0.1–0.9, default 0.5). */
-  maxHistoryShare?: number;
+  /** Max share of context window for history (0.1–0.9, default 0.7). */
+  historyLimit?: number;
   /** Pre-compaction memory flush (agentic turn). Default: enabled. */
   memoryFlush?: AgentCompactionMemoryFlushConfig;
 };

@@ -57,7 +57,7 @@ describe("pruneHistoryForContextShare", () => {
     const pruned = pruneHistoryForContextShare({
       messages,
       maxContextTokens,
-      maxHistoryShare: 0.5,
+      historyLimit: 0.5,
       parts: 2,
     });
 
@@ -80,7 +80,7 @@ describe("pruneHistoryForContextShare", () => {
     const pruned = pruneHistoryForContextShare({
       messages,
       maxContextTokens,
-      maxHistoryShare: 0.5,
+      historyLimit: 0.5,
       parts: 2,
     });
 
@@ -95,7 +95,7 @@ describe("pruneHistoryForContextShare", () => {
     const pruned = pruneHistoryForContextShare({
       messages,
       maxContextTokens,
-      maxHistoryShare: 0.5,
+      historyLimit: 0.5,
       parts: 2,
     });
 
@@ -120,7 +120,7 @@ describe("pruneHistoryForContextShare", () => {
     const pruned = pruneHistoryForContextShare({
       messages,
       maxContextTokens,
-      maxHistoryShare: 0.5,
+      historyLimit: 0.5,
       parts: 2,
     });
 
@@ -142,7 +142,7 @@ describe("pruneHistoryForContextShare", () => {
     const pruned = pruneHistoryForContextShare({
       messages,
       maxContextTokens: 100_000,
-      maxHistoryShare: 0.5,
+      historyLimit: 0.5,
       parts: 2,
     });
 
