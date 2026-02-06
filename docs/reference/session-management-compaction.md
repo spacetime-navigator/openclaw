@@ -219,7 +219,7 @@ OpenClaw also configures proactive compaction via `agents.defaults.compaction.hi
 - **Default**: `0.7` (70% of context window)
 - **Range**: `0.1`–`0.9`
 - **Behavior**: After each successful turn, if history tokens exceed `historyLimit × contextWindow`, compaction runs proactively.
-- **Environment variable**: Can be set via `${AESOP_COMPACTION_HISTORY_LIMIT}` or similar env var substitution.
+- **Environment variable**: Can be set via `${COMPACTION_HISTORY_LIMIT}` or similar env var substitution.
 
 Example:
 

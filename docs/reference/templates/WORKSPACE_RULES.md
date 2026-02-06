@@ -35,7 +35,7 @@ You **can** enact changes to the OpenClaw codebase, TOOLS.md, or other repo file
 
 When running in Docker (or when the gateway is configured for PR workflow), the operator may set:
 
-- **OPENCLAW_GITHUB_REPO** – Target repo in **owner/repo** form only (e.g. `spacetime-navigator/aesop`). This is how `gh` knows which repo to interact with. Do **not** use a URL (no `https://...` or `git@...`). Use with `gh --repo $OPENCLAW_GITHUB_REPO` when creating PRs.
+- **OPENCLAW_GITHUB_REPO** – Target repo in **owner/repo** form only (e.g. `myorg/my-repo`). This is how `gh` knows which repo to interact with. Do **not** use a URL (no `https://...` or `git@...`). Use with `gh --repo $OPENCLAW_GITHUB_REPO` when creating PRs.
 - **GH_TOKEN** or **GITHUB_TOKEN** – Either is fine; the `gh` CLI accepts both. Token must have permissions to create branches and open PRs in that repo.
 
 If these are set, you can use the GitHub skill to create pull requests. If they are not set, you cannot create PRs from this environment; suggest the operator set them for PR-based code changes.
@@ -52,7 +52,7 @@ If these are set, you can use the GitHub skill to create pull requests. If they 
 
 1. **Create an issue** describing the change (or use an existing one). Tag it appropriately (e.g. `sensitive`, `security`, `important`, `need-human-input`, or leave untagged for small fixes).
 2. **Pull latest** from the base branch (usually `main`) on the fork/upstream you use.
-3. **Create a new branch** with naming: **`aesop-<issue-tag>-<short-branch-content-slug>`** (e.g. `aesop-fix-memory-compaction-edge-case` or `aesop-security-auth-validation`). Use a short, descriptive slug.
+3. **Create a new branch** with naming: **`<agent-name>-<issue-tag>-<short-branch-content-slug>`** (e.g. `agent-fix-memory-compaction-edge-case` or `agent-security-auth-validation`). Use a short, descriptive slug.
 4. **Make changes** and **add or update unit tests** for the change. Do not skip tests.
 5. **Commit** only when tests pass and the code satisfies the issue. Write clear commit messages.
 6. **Push** the branch and **open a PR** into `main`. In the PR:
@@ -63,12 +63,9 @@ If these are set, you can use the GitHub skill to create pull requests. If they 
    - If the PR is **requested changes**: update the code, push, and resubmit for review.
    - If the PR is **rejected**: record that in the originating issue (e.g. comment that the approach was rejected and why).
 
-### Discord: aesop-github-repo channel
+### Discord channel (optional)
 
-All **discussion and alerts** for GitHub workflow should happen in the Discord channel **aesop-github-repo**: issue created, new PR opened, PR accepted/rejected, review comments, responses, etc. When you take GitHub actions (create an issue, open a PR, etc.), post a short summary to this channel so the operator and others can follow along.
-
-- **Discord channel name:** `aesop-github-repo`
-- **Channel ID:** `1468825913914429617` (already allowlisted in OpenClaw config so you can read and post there)
+If configured, all **discussion and alerts** for GitHub workflow can happen in a dedicated Discord channel: issue created, new PR opened, PR accepted/rejected, review comments, responses, etc. When you take GitHub actions (create an issue, open a PR, etc.), post a short summary to this channel so the operator and others can follow along.
 
 This keeps a safe, clean workflow for agentically improving the codebase with human oversight and a single place for GitHub-related conversation.
 

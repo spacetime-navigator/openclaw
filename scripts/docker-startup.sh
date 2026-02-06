@@ -8,18 +8,25 @@ fi
 
 WORKSPACE_DIR="${OPENCLAW_WORKSPACE_DIR:-/state/.openclaw/workspace}"
 TEMPLATE_DIR="/app/docs/reference/templates"
+PERSONAL_TEMPLATE_DIR="${OPENCLAW_PERSONAL_TEMPLATES_DIR:-/personal-templates}"
 
 mkdir -p "$WORKSPACE_DIR"
 
 seed_from_template() {
   local name="$1"
   local dest="${WORKSPACE_DIR}/${name}"
-  local src="${TEMPLATE_DIR}/${name}"
   # Only seed if file doesn't exist (preserve user edits)
   if [ -f "$dest" ]; then
     return 0
   fi
-  if [ -f "$src" ]; then
+  # Prefer personal templates over base templates
+  local src=""
+  if [ -d "$PERSONAL_TEMPLATE_DIR" ] && [ -f "${PERSONAL_TEMPLATE_DIR}/${name}" ]; then
+    src="${PERSONAL_TEMPLATE_DIR}/${name}"
+  elif [ -f "${TEMPLATE_DIR}/${name}" ]; then
+    src="${TEMPLATE_DIR}/${name}"
+  fi
+  if [ -n "$src" ] && [ -f "$src" ]; then
     # Strip front-matter from templates (YAML between --- markers)
     # Templates have YAML front-matter that should be removed when seeding workspace
     # This matches the behavior of stripFrontMatter() in workspace.ts:

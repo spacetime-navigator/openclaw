@@ -1931,7 +1931,7 @@ See [/concepts/session-pruning](/concepts/session-pruning) for behavior details.
 
 `agents.defaults.compaction.mode` selects the compaction summarization strategy. Defaults to `default`; set `safeguard` to enable chunked summarization for very long histories. See [/concepts/compaction](/concepts/compaction).
 
-`agents.defaults.compaction.historyLimit` controls proactive compaction threshold (default: `0.7`). Range: `0.1`–`0.9`. After each successful turn, if history tokens exceed `historyLimit × contextWindow`, compaction runs proactively. Supports environment variable substitution (e.g., `${AESOP_COMPACTION_HISTORY_LIMIT}`).
+`agents.defaults.compaction.historyLimit` controls proactive compaction threshold (default: `0.7`). Range: `0.1`–`0.9`. After each successful turn, if history tokens exceed `historyLimit × contextWindow`, compaction runs proactively. Supports environment variable substitution (e.g., `${COMPACTION_HISTORY_LIMIT}`).
 
 `agents.defaults.compaction.reserveTokensFloor` enforces a minimum `reserveTokens`
 value for Pi compaction (default: `20000`). Set it to `0` to disable the floor.

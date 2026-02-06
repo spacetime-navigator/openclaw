@@ -63,6 +63,7 @@ It writes config/workspace on the host:
 - `~/.openclaw/`
 - `~/.openclaw/workspace`
 
+<<<<<<< HEAD
 **Workspace volume mapping:** The agent’s default workspace path inside the container is
 `/home/node/.openclaw/workspace`. Compose mounts `${OPENCLAW_WORKSPACE_DIR}` from the host to that path, so
 **whatever you set `OPENCLAW_WORKSPACE_DIR` to is where SOUL.md, IDENTITY.md, USER.md, *_PLUS, memory files, and AGENTS.md will live.** Set it to a host path (or a path inside your state volume) so that:
@@ -101,6 +102,9 @@ mkdir -p "$OPENCLAW_WORKSPACE_DIR"
 ./docker-setup.sh
 ```
 Running on a VPS? See [Hetzner (Docker VPS)](/install/hetzner).
+=======
+Running on a VPS? See [Hetzner (Docker VPS)](/platforms/hetzner).
+>>>>>>> adf79197e (README update)
 
 ### Manual flow (compose)
 
@@ -201,6 +205,7 @@ Notes:
 - If you change `OPENCLAW_DOCKER_APT_PACKAGES`, rerun `docker-setup.sh` to rebuild
   the image.
 
+<<<<<<< HEAD
 ### Power-user / full-featured container (opt-in)
 
 The default Docker image is **security-first** and runs as the non-root `node`
@@ -273,6 +278,8 @@ sudo chown -R 1000:1000 /path/to/openclaw-config /path/to/openclaw-workspace
 
 If you choose to run as root for convenience, you accept the security tradeoff.
 
+=======
+>>>>>>> adf79197e (README update)
 ### Faster rebuilds (recommended)
 
 To speed up rebuilds, order your Dockerfile so dependency layers are cached.
@@ -360,10 +367,6 @@ pnpm test:docker:qr
 - Gateway bind defaults to `lan` for container use.
 - Dockerfile CMD uses `--allow-unconfigured`; mounted config with `gateway.mode` not `local` will still start. Override CMD to enforce the guard.
 - The gateway container is the source of truth for sessions (`~/.openclaw/agents/<agentId>/sessions/`).
-- **Why sessions survive rebuilds:** If you use a named volume for state (e.g. `openclaw_state:/state`), that volume is not removed by `docker compose down`. Only `docker compose down -v` removes volumes. So session files and other state persist across image rebuilds and container recreation. To clear only session data while the container is running, run:  
-  `docker compose exec openclaw sh -c 'rm -rf /state/agents/*/sessions/*'`  
-  To remove all state (sessions, caches, logs), remove the state volume after bringing the stack down:  
-  `docker compose down && docker volume rm <project>_openclaw_state && docker compose up -d`
 
 ## Agent Sandbox (host gateway + Docker tools)
 

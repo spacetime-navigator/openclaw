@@ -109,7 +109,7 @@ export async function getReplyFromConfig(
     agentCfg?.typingTtlMinutes ??
     sessionCfg?.typingTtlMinutes ??
     (() => {
-      const raw = process.env.AESOP_TYPING_TTL_MINUTES?.trim();
+      const raw = process.env.TYPING_TTL_MINUTES?.trim();
       if (!raw) return undefined;
       const n = Number(raw);
       return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
