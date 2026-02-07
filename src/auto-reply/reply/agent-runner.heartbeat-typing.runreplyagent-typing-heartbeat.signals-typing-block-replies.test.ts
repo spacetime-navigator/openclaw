@@ -101,6 +101,7 @@ function createMinimalRun(params?: {
         shouldFollowup: false,
         isActive: false,
         isStreaming: false,
+        runInProgress: false,
         opts,
         typing,
         sessionEntry: params?.sessionEntry,

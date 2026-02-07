@@ -202,14 +202,14 @@ export function createMemorySearchTool(options: {
         }
         
         const status = manager.status();
-        const decorated = decorateCitations(rawResults, includeCitations);
+        const decorated = decorateCitations(results, includeCitations);
         const resolved = resolveMemoryBackendConfig({ cfg, agentId });
-        const results =
+        const finalResults =
           status.backend === "qmd"
             ? clampResultsByInjectedChars(decorated, resolved.qmd?.limits.maxInjectedChars)
             : decorated;
         return jsonResult({
-          results,
+          results: finalResults,
           provider: status.provider,
           model: status.model,
           fallback: status.fallback,

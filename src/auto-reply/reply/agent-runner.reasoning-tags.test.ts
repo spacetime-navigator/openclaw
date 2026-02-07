@@ -89,6 +89,7 @@ function createRun(params?: {
     shouldFollowup: false,
     isActive: false,
     isStreaming: false,
+    runInProgress: false,
     typing,
     sessionCtx,
     sessionEntry: params?.sessionEntry,

@@ -89,6 +89,7 @@ function createRun() {
     shouldFollowup: false,
     isActive: false,
     isStreaming: false,
+    runInProgress: false,
     typing,
     sessionCtx,
     defaultModel: "claude-cli/opus-4.5",

@@ -64,6 +64,8 @@ seed_from_template "USER_PLUS.md"
 seed_from_template "TOOLS.md"
 seed_from_template "HEARTBEAT.md"
 seed_from_template "BOOT.md"
+seed_from_template "WORKSPACE_RULES.md"
+seed_from_template "OPERATING_PROCEDURES.md"
 
 # Seed BOOTSTRAP.md only if:
 # 1. It doesn't exist, AND
@@ -72,6 +74,19 @@ seed_from_template "BOOT.md"
 if [ ! -f "${WORKSPACE_DIR}/BOOTSTRAP.md" ]; then
   if ! ls /state/agents/*/sessions/*.jsonl >/dev/null 2>&1; then
     seed_from_template "BOOTSTRAP.md"
+  fi
+fi
+
+# Validate config file doesn't contain placeholders (if config path is set)
+if [ -n "${OPENCLAW_CONFIG_PATH:-}" ] && [ -f "${OPENCLAW_CONFIG_PATH}" ]; then
+  if grep -q "YOUR_DISCORD_GUILD_ID\|YOUR_DISCORD_CHANNEL_ID\|YOUR_DISCORD_USER_ID" "${OPENCLAW_CONFIG_PATH}" 2>/dev/null; then
+    echo "ERROR: Config file contains placeholder values that must be replaced:" >&2
+    echo "  File: ${OPENCLAW_CONFIG_PATH}" >&2
+    echo "  Placeholders found: YOUR_DISCORD_GUILD_ID, YOUR_DISCORD_CHANNEL_ID, or YOUR_DISCORD_USER_ID" >&2
+    echo "" >&2
+    echo "Please edit the config file and replace these placeholders with your actual Discord IDs." >&2
+    echo "See README.md for instructions on how to find your Discord IDs." >&2
+    exit 1
   fi
 fi
 

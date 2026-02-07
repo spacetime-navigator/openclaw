@@ -85,6 +85,7 @@ function createRun(params: { responseUsage: "tokens" | "full"; sessionKey: strin
     shouldFollowup: false,
     isActive: false,
     isStreaming: false,
+    runInProgress: false,
     typing,
     sessionCtx,
     sessionEntry,

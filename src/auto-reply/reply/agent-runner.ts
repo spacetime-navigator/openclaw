@@ -53,6 +53,7 @@ export async function runReplyAgent(params: {
   shouldFollowup: boolean;
   isActive: boolean;
   isStreaming: boolean;
+  runInProgress: boolean;
   opts?: GetReplyOptions;
   typing: TypingController;
   sessionEntry?: SessionEntry;
@@ -84,6 +85,7 @@ export async function runReplyAgent(params: {
     shouldFollowup,
     isActive,
     isStreaming,
+    runInProgress,
     opts,
     typing,
     sessionEntry,
@@ -179,7 +181,7 @@ export async function runReplyAgent(params: {
     }
   }
 
-  if (isActive && (shouldFollowup || resolvedQueue.mode === "steer")) {
+  if (runInProgress && (shouldFollowup || resolvedQueue.mode === "steer")) {
     enqueueFollowupRun(queueKey, followupRun, resolvedQueue);
     if (activeSessionEntry && activeSessionStore && sessionKey) {
       const updatedAt = Date.now();

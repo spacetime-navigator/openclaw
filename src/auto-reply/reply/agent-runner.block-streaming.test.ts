@@ -104,6 +104,7 @@ describe("runReplyAgent block streaming", () => {
       shouldFollowup: false,
       isActive: false,
       isStreaming: false,
+      runInProgress: false,
       opts: { onBlockReply },
       typing,
       sessionCtx,

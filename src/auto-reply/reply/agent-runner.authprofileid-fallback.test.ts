@@ -119,6 +119,7 @@ describe("authProfileId fallback scoping", () => {
       shouldFollowup: false,
       isActive: false,
       isStreaming: false,
+      runInProgress: false,
       typing,
       sessionCtx,
       sessionEntry,

@@ -32,6 +32,7 @@ export const DEFAULT_USER_PLUS_FILENAME = "USER_PLUS.md";
 export const DEFAULT_HEARTBEAT_FILENAME = "HEARTBEAT.md";
 export const DEFAULT_BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
 export const DEFAULT_WORKSPACE_RULES_FILENAME = "WORKSPACE_RULES.md";
+export const DEFAULT_OPERATING_PROCEDURES_FILENAME = "OPERATING_PROCEDURES.md";
 export const DEFAULT_MEMORY_FILENAME = "MEMORY.md";
 export const DEFAULT_MEMORY_ALT_FILENAME = "memory.md";
 
@@ -45,6 +46,7 @@ export const ALLOWED_WRITABLE_WORKSPACE_FILES: readonly string[] = [
   "BOOT.md",
   "BOOTSTRAP.md",
   "HEARTBEAT.md",
+  "OPERATING_PROCEDURES.md",
   "SOUL_PLUS.md",
   "IDENTITY_PLUS.md",
   "USER_PLUS.md",
@@ -102,6 +104,7 @@ export type WorkspaceBootstrapFileName =
   | typeof DEFAULT_HEARTBEAT_FILENAME
   | typeof DEFAULT_BOOTSTRAP_FILENAME
   | typeof DEFAULT_WORKSPACE_RULES_FILENAME
+  | typeof DEFAULT_OPERATING_PROCEDURES_FILENAME
   | typeof DEFAULT_MEMORY_FILENAME
   | typeof DEFAULT_MEMORY_ALT_FILENAME;
 
@@ -203,6 +206,7 @@ export async function ensureAgentWorkspace(params?: {
   const heartbeatPath = path.join(dir, DEFAULT_HEARTBEAT_FILENAME);
   const bootstrapPath = path.join(dir, DEFAULT_BOOTSTRAP_FILENAME);
   const workspaceRulesPath = path.join(dir, DEFAULT_WORKSPACE_RULES_FILENAME);
+  const operatingProceduresPath = path.join(dir, DEFAULT_OPERATING_PROCEDURES_FILENAME);
 
   const isBrandNewWorkspace = await (async () => {
     const paths = [
@@ -240,6 +244,7 @@ export async function ensureAgentWorkspace(params?: {
   const heartbeatTemplate = await loadTemplate(DEFAULT_HEARTBEAT_FILENAME);
   const bootstrapTemplate = await loadTemplate(DEFAULT_BOOTSTRAP_FILENAME);
   const workspaceRulesTemplate = await loadTemplate(DEFAULT_WORKSPACE_RULES_FILENAME);
+  const operatingProceduresTemplate = await loadTemplate(DEFAULT_OPERATING_PROCEDURES_FILENAME);
 
   await writeFileIfMissing(agentsPath, agentsTemplate);
   // When OPENCLAW_IMMUTABLE_DIR is set (Docker), SOUL/IDENTITY/USER/TOOLS/WORKSPACE_RULES live in the image read-only; do not write them to workspace.
@@ -255,6 +260,7 @@ export async function ensureAgentWorkspace(params?: {
   await writeFileIfMissing(path.join(dir, DEFAULT_IDENTITY_PLUS_FILENAME), identityPlusTemplate);
   await writeFileIfMissing(path.join(dir, DEFAULT_USER_PLUS_FILENAME), userPlusTemplate);
   await writeFileIfMissing(heartbeatPath, heartbeatTemplate);
+  await writeFileIfMissing(operatingProceduresPath, operatingProceduresTemplate);
   if (isBrandNewWorkspace) {
     await writeFileIfMissing(bootstrapPath, bootstrapTemplate);
   }
@@ -335,6 +341,7 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
     { name: DEFAULT_HEARTBEAT_FILENAME, filePath: path.join(resolvedDir, DEFAULT_HEARTBEAT_FILENAME) },
     { name: DEFAULT_BOOTSTRAP_FILENAME, filePath: path.join(resolvedDir, DEFAULT_BOOTSTRAP_FILENAME) },
     { name: DEFAULT_WORKSPACE_RULES_FILENAME, filePath: path.join(resolvedDir, DEFAULT_WORKSPACE_RULES_FILENAME) },
+    { name: DEFAULT_OPERATING_PROCEDURES_FILENAME, filePath: path.join(resolvedDir, DEFAULT_OPERATING_PROCEDURES_FILENAME) },
   ];
 
   entries.push(...(await resolveMemoryBootstrapEntries(resolvedDir)));
