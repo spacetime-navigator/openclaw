@@ -211,6 +211,11 @@ export function createMemorySearchTool(options: {
         }
         
         const status = manager.status();
+        const citationsMode = resolveMemoryCitationsMode(cfg);
+        const includeCitations = shouldIncludeCitations({
+          mode: citationsMode,
+          sessionKey: options.agentSessionKey,
+        });
         const decorated = decorateCitations(results, includeCitations);
         const resolved = resolveMemoryBackendConfig({ cfg, agentId });
         const finalResults =
